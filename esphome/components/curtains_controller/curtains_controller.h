@@ -7,102 +7,113 @@
 namespace esphome {
 namespace curtains_controller {
 
+namespace curtains_state {
 enum CurtainState { Opening, Open, Closing, Closed };
+};
 
 struct GlobalState {
   uint32_t tulleOpenPosition;
   uint32_t tulleClosePosition;
   uint32_t curtainsOpenPosition;
   uint32_t curtainsClosePosition;
-  CurtainState tulleState;
-  CurtainState curtainsState;
+  curtains_state::CurtainState tulleState;
+  curtains_state::CurtainState curtainsState;
   bool setupCompleted;
 };
 
-enum ButtonState { btnNone, btnTulleOpen, btnTulleClose, btnCurtainsOpen, btnCurtainsClose, btnSet, btnMode };
+namespace button_state {
+enum ButtonState { None, TulleOpen, TulleClose, CurtainsOpen, CurtainsClose, Set, Mode };
+};
 
+namespace step_id {
 // no not assign manual values, we rely on the automatic value assignment by the compiler
 enum StepId {
-  stpInitial,  // decide wheater to go to the setup or to the Ready
-  stpReady,
-  stpOpeningClosing,
-  stpAlreadyInMotion,
-  stpUnsupported,
-  stpModePressed,
-  stpCalibrateTulleOpen,
-  stpCalibrateTulleClosed,
-  stpCalibrateCurtainsOpen,
-  stpCalibrateCurtainsClosed,
-  stpNone,      // Special task, equals to NULL
+  Initial,  // decide wheater to go to the setup or to the Ready
+  Ready,
+  OpeningClosing,
+  AlreadyInMotion,
+  Unsupported,
+  ModePressed,
+  CalibrateTulleOpen,
+  CalibrateTulleClosed,
+  CalibrateCurtainsOpen,
+  CalibrateCurtainsClosed,
+  None,         // Special task, equals to NULL
   MUST_BE_LAST  // DO NOT USE!
 };
 
+};  // namespace step_id
+
 class TimeoutAndNextStep {
  public:
-  TimeoutAndNextStep(uint32_t timeoutMillis, StepId &nextStep) : timeoutMillis(timeoutMillis), nextStep(nextStep) {}
+  TimeoutAndNextStep(uint32_t timeoutMillis, step_id::StepId &nextStep)
+      : timeoutMillis(timeoutMillis), nextStep(nextStep) {}
 
   const uint32_t timeoutMillis;
-  const StepId &nextStep;
+  const step_id::StepId &nextStep;
 };
 
 class StepNode {
  public:
-  StepNode(StepId stepId) : StepNode(stepId, "<Undefined for " + String(stepId) + ">") {}
+  StepNode(step_id::StepId stepId) : StepNode(stepId, "<Undefined for " + String(stepId) + ">") {}
 
-  StepNode(StepId stepId, String displayText) : stepId(stepId), displayText(displayText) {}
+  StepNode(step_id::StepId stepId, String displayText) : stepId(stepId), displayText(displayText) {}
 
-  StepId getStepId() { return stepId; }
+  step_id::StepId getStepId() { return stepId; }
 
   String getDisplayText() { return displayText; }
 
-  StepNode *onTulleOpen(StepId stepId) {
+  StepNode *onTulleOpen(step_id::StepId stepId) {
     tulleOpenStep = stepId;
     return this;
   }
 
-  StepNode *onTulleClosed(StepId stepId) {
+  StepNode *onTulleClosed(step_id::StepId stepId) {
     tulleCloseStep = stepId;
     return this;
   }
 
-  StepNode *onCurtainsOpen(StepId stepId) {
+  StepNode *onCurtainsOpen(step_id::StepId stepId) {
     curtainsOpenStep = stepId;
     return this;
   }
 
-  StepNode *onCurtainsClosed(StepId stepId) {
+  StepNode *onCurtainsClosed(step_id::StepId stepId) {
     curtainsCloseStep = stepId;
     return this;
   }
 
-  StepNode *onSet(StepId stepId) {
+  StepNode *onSet(step_id::StepId stepId) {
     setStep = stepId;
     return this;
   }
 
-  StepNode *onMode(StepId stepId) {
+  StepNode *onMode(step_id::StepId stepId) {
     modeStep = stepId;
     return this;
   }
 
-  StepNode *setCustomNextStep(std::function<StepId(GlobalState &, ButtonState, uint32_t)> customNextStep,
-                              std::function<std::unordered_set<StepId>*()> customGetNextSteps) {
+  StepNode *setCustomNextStep(
+      std::function<step_id::StepId(GlobalState &, button_state::ButtonState, uint32_t)> customNextStep,
+      std::function<std::unordered_set<step_id::StepId> *()> customGetNextSteps) {
     this->customNextStep = customNextStep;
     this->customGetNextSteps = customGetNextSteps;
     return this;
   }
 
-  StepNode *setCustomDisplayText(std::function<String(GlobalState &, ButtonState, uint32_t)> customDisplayText) {
+  StepNode *setCustomDisplayText(
+      std::function<String(GlobalState &, button_state::ButtonState, uint32_t)> customDisplayText) {
     this->customDisplayText = customDisplayText;
     return this;
   }
 
-  StepNode *setTimeout(uint32_t timeoutMillis, StepId nextStep) {
+  StepNode *setTimeout(uint32_t timeoutMillis, step_id::StepId nextStep) {
     timeoutStep = new TimeoutAndNextStep(timeoutMillis, nextStep);
     return this;
   }
 
-  StepId nextStep(GlobalState &globalState, ButtonState buttonState, uint32_t millis_since_start) {
+  step_id::StepId nextStep(GlobalState &globalState, button_state::ButtonState buttonState,
+                           uint32_t millis_since_start) {
     if (customNextStep != NULL) {
       return customNextStep(globalState, buttonState, millis_since_start);
     }
@@ -110,58 +121,58 @@ class StepNode {
       return timeoutStep->nextStep;
     }
     switch (buttonState) {
-      case btnTulleOpen:
+      case button_state::TulleOpen:
         return tulleOpenStep;
-      case btnTulleClose:
+      case button_state::TulleClose:
         return tulleCloseStep;
-      case btnCurtainsOpen:
+      case button_state::CurtainsOpen:
         return curtainsOpenStep;
-      case btnCurtainsClose:
+      case button_state::CurtainsClose:
         return curtainsCloseStep;
-      case btnSet:
+      case button_state::Set:
         return setStep;
-      case btnMode:
+      case button_state::Mode:
         return modeStep;
     }
-    return stpNone;
+    return step_id::None;
   }
 
-  String getDisplayText(GlobalState &globalState, ButtonState buttonState, uint32_t millis_since_start) {
+  String getDisplayText(GlobalState &globalState, button_state::ButtonState buttonState, uint32_t millis_since_start) {
     // if (customDisplayText.has_value()) {
     //   return customDisplayText.value()(globalState, buttonState, millis_since_start);
     // }
     return displayText;
   }
 
-  void enter(GlobalState &globalState, ButtonState buttonState, uint32_t millis_since_start) {
+  void enter(GlobalState &globalState, button_state::ButtonState buttonState, uint32_t millis_since_start) {
     enterFn(globalState, buttonState, millis_since_start);
   }
 
-  void exit(GlobalState &globalState, ButtonState buttonState, uint32_t millis_since_start) {
+  void exit(GlobalState &globalState, button_state::ButtonState buttonState, uint32_t millis_since_start) {
     exitFn(globalState, buttonState, millis_since_start);
   }
 
-  std::unordered_set<StepId>* getAllOutboundSteps() {
+  std::unordered_set<step_id::StepId> *getAllOutboundSteps() {
     if (customGetNextSteps != NULL) {
       return customGetNextSteps();
     }
-    auto res = new std::unordered_set<StepId>();
-    if (tulleOpenStep != stpNone) {
+    auto res = new std::unordered_set<step_id::StepId>();
+    if (tulleOpenStep != step_id::None) {
       res += tulleOpenStep;
     }
-    if (tulleCloseStep != stpNone) {
+    if (tulleCloseStep != step_id::None) {
       res += tulleCloseStep;
     }
-    if (curtainsOpenStep != stpNone) {
+    if (curtainsOpenStep != step_id::None) {
       res += curtainsOpenStep;
     }
-    if (curtainsCloseStep != stpNone) {
+    if (curtainsCloseStep != step_id::None) {
       res += curtainsCloseStep;
     }
-    if (setStep != stpNone) {
+    if (setStep != step_id::None) {
       res += setStep;
     }
-    if (modeStep != stpNone) {
+    if (modeStep != step_id::None) {
       res += modeStep;
     }
     if (timeoutStep != NULL) {
@@ -171,19 +182,19 @@ class StepNode {
   }
 
  private:
-  const StepId stepId;
+  const step_id::StepId stepId;
   const String displayText;
-  const std::function<void(GlobalState &, ButtonState, uint32_t)> enterFn;
-  const std::function<void(GlobalState &, ButtonState, uint32_t)> exitFn;
-  StepId tulleOpenStep = stpNone;
-  StepId tulleCloseStep = stpNone;
-  StepId curtainsOpenStep = stpNone;
-  StepId curtainsCloseStep = stpNone;
-  StepId setStep = stpNone;
-  StepId modeStep = stpNone;
-  std::function<String(GlobalState &, ButtonState, uint32_t)> customDisplayText = NULL;
-  std::function<StepId(GlobalState &, ButtonState, uint32_t)> customNextStep = NULL;
-  std::function<std::unordered_set<StepId>*()> customGetNextSteps = NULL;
+  const std::function<void(GlobalState &, button_state::ButtonState, uint32_t)> enterFn;
+  const std::function<void(GlobalState &, button_state::ButtonState, uint32_t)> exitFn;
+  step_id::StepId tulleOpenStep = step_id::None;
+  step_id::StepId tulleCloseStep = step_id::None;
+  step_id::StepId curtainsOpenStep = step_id::None;
+  step_id::StepId curtainsCloseStep = step_id::None;
+  step_id::StepId setStep = step_id::None;
+  step_id::StepId modeStep = step_id::None;
+  std::function<String(GlobalState &, button_state::ButtonState, uint32_t)> customDisplayText = NULL;
+  std::function<step_id::StepId(GlobalState &, button_state::ButtonState, uint32_t)> customNextStep = NULL;
+  std::function<std::unordered_set<step_id::StepId> *()> customGetNextSteps = NULL;
   TimeoutAndNextStep *timeoutStep = NULL;
 };
 
@@ -212,23 +223,29 @@ class CurtainsController : public Component {
   binary_sensor::BinarySensor &setButton;
   binary_sensor::BinarySensor &modeButton;
   lcd_pcf8574::PCF8574LCDDisplay &display;
-  ButtonState buttonState;
-  StepId currentStep;
+  button_state::ButtonState buttonState;
+  step_id::StepId currentStep;
   std::vector<StepNode *> steps = std::vector<StepNode *>();
   GlobalState globalState;
   unsigned long lastStepStarted;
 
-  void onTulleOpenButtonStateChanged(bool state) { buttonState = state ? btnTulleOpen : btnNone; }
-  void onTulleCloseButtonStateChanged(bool state) { buttonState = state ? btnTulleClose : btnNone; }
-  void onCurtainsOpenButtonStateChanged(bool state) { buttonState = state ? btnCurtainsOpen : btnNone; }
-  void onCurtainsCloseButtonStateChanged(bool state) { buttonState = state ? btnCurtainsClose : btnNone; }
-  void onSetButtonStateChanged(bool state) { buttonState = state ? btnSet : btnNone; }
-  void onModeButtonStateChanged(bool state) { buttonState = state ? btnMode : btnNone; }
+  void onTulleOpenButtonStateChanged(bool state) { buttonState = state ? button_state::TulleOpen : button_state::None; }
+  void onTulleCloseButtonStateChanged(bool state) {
+    buttonState = state ? button_state::TulleClose : button_state::None;
+  }
+  void onCurtainsOpenButtonStateChanged(bool state) {
+    buttonState = state ? button_state::CurtainsOpen : button_state::None;
+  }
+  void onCurtainsCloseButtonStateChanged(bool state) {
+    buttonState = state ? button_state::CurtainsClose : button_state::None;
+  }
+  void onSetButtonStateChanged(bool state) { buttonState = state ? button_state::Set : button_state::None; }
+  void onModeButtonStateChanged(bool state) { buttonState = state ? button_state::Mode : button_state::None; }
   void registerStep(StepNode *step);
   void restoreGlobalState();
   void backupGlobalState();
   void initSteps();
-  StepNode *step(StepId stepId) { return steps[stepId]; }
+  StepNode *step(step_id::StepId stepId) { return steps[stepId]; }
   void printText(String text);
 };
 };  // namespace curtains_controller

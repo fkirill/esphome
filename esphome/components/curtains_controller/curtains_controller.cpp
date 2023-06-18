@@ -5,9 +5,9 @@ namespace curtains_controller {
 
 void CurtainsController::setup() {
   initSteps();
-  buttonState = btnNone;
+  buttonState = button_state::None;
   lastStepStarted = millis();
-  currentStep = stpInitial;
+  currentStep = step_id::Initial;
   tulleOpenButton.add_on_state_callback([this](bool state) { this->onTulleOpenButtonStateChanged(state); });
   tulleCloseButton.add_on_state_callback([this](bool state) { this->onTulleCloseButtonStateChanged(state); });
   curtainsOpenButton.add_on_state_callback([this](bool state) { this->onCurtainsOpenButtonStateChanged(state); });
@@ -22,7 +22,7 @@ void CurtainsController::loop() {
   unsigned long millisSinceStart = nowMillis - lastStepStarted;
   StepNode *currentStepNode = step(currentStep);
   auto nextStep = currentStepNode->nextStep(globalState, buttonState, millisSinceStart);
-  if (nextStep == stpNone) {
+  if (nextStep == step_id::None) {
     String text = currentStepNode->getDisplayText(globalState, buttonState, millisSinceStart);
     printText(text);
     return;
@@ -36,13 +36,13 @@ void CurtainsController::loop() {
 
 void setUpInitialStep(StepNode *step) {
   step->setCustomNextStep(
-      [](GlobalState &globalState, ButtonState buttonState, uint32_t millisSInceStart) -> StepId {
-        return globalState.setupCompleted ? stpReady : stpCalibrateTulleOpen;
+      [](GlobalState &globalState, button_state::ButtonState buttonState, uint32_t millisSInceStart) -> step_id::StepId {
+        return globalState.setupCompleted ? step_id::Ready : step_id::CalibrateTulleOpen;
       }, 
-      []() -> std::unordered_set<StepId>* {
-        auto res = new std::unordered_set<StepId>();
-        res += stpReady;
-        res += stpCalibrateTulleOpen;
+      []() -> std::unordered_set<step_id::StepId>* {
+        auto res = new std::unordered_set<step_id::StepId>();
+        res += step_id::Ready;
+        res += step_id::CalibrateTulleOpen;
         return res;
       });
 }
@@ -50,21 +50,21 @@ void setUpInitialStep(StepNode *step) {
 void setUpReadyStep(StepNode *step) {}
 
 void CurtainsController::initSteps() {
-  registerStep(new StepNode(stpInitial));
-  registerStep(new StepNode(stpReady, "Ready"));
-  registerStep(new StepNode(stpOpeningClosing));
-  registerStep(new StepNode(stpAlreadyInMotion, "Tulle or Curtains are already in motion"));
-  registerStep(new StepNode(stpUnsupported, "Unsupported"));
-  registerStep(new StepNode(stpModePressed, "Press SET withint 3 seconds to enter setup mode"));
-  registerStep(new StepNode(stpCalibrateTulleOpen, "Use tulle open and close button to adjust tulle opening position"));
-  registerStep(new StepNode(stpCalibrateTulleClosed, "Use tulle open and close button to adjust tulle closing position"));
+  registerStep(new StepNode(step_id::Initial));
+  registerStep(new StepNode(step_id::Ready, "Ready"));
+  registerStep(new StepNode(step_id::OpeningClosing));
+  registerStep(new StepNode(step_id::AlreadyInMotion, "Tulle or Curtains are already in motion"));
+  registerStep(new StepNode(step_id::Unsupported, "Unsupported"));
+  registerStep(new StepNode(step_id::ModePressed, "Press SET withint 3 seconds to enter setup mode"));
+  registerStep(new StepNode(step_id::CalibrateTulleOpen, "Use tulle open and close button to adjust tulle opening position"));
+  registerStep(new StepNode(step_id::CalibrateTulleClosed, "Use tulle open and close button to adjust tulle closing position"));
   registerStep(
-      new StepNode(stpCalibrateCurtainsOpen, "Use curtains open and close button to adjust curtains opening position"));
+      new StepNode(step_id::CalibrateCurtainsOpen, "Use curtains open and close button to adjust curtains opening position"));
   registerStep(
-      new StepNode(stpCalibrateCurtainsClosed, "Use curtains open and close button to adjust curtains closing position"));
+      new StepNode(step_id::CalibrateCurtainsClosed, "Use curtains open and close button to adjust curtains closing position"));
 
-  setUpInitialStep(step(stpInitial));
-  //setupReadyStep(step(stpReady));
+  setUpInitialStep(step(step_id::Initial));
+  //setupReadyStep(step(step_id::Ready));
 }
 
 void CurtainsController::registerStep(StepNode *step) {
