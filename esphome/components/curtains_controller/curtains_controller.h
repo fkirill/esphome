@@ -1,8 +1,11 @@
+#pragma once
+
 #include <unordered_set>
 #include "esphome/core/component.h"
 #include "components/stepper/stepper.h"
 #include "components/binary_sensor/binary_sensor.h"
 #include "components/lcd_pcf8574/pcf8574_display.h"
+#include "esphome/components/output/float_output.h"
 
 namespace esphome {
 namespace curtains_controller {
@@ -62,6 +65,7 @@ enum StepId {
   CalibrateCurtainsCloseAdjustOpen,
   CalibrateCurtainsCloseStartAdjustClose,
   CalibrateCurtainsCloseAdjustClose,
+  SetupComplete,
   None,  // Special value, means NULL/nothing/no change.
 };
 
@@ -236,7 +240,7 @@ class StepNode {
   TimeoutAndNextStep *timeoutStep = NULL;
 };
 
-class CurtainsController : public Component {
+class CurtainsController : public output::FloatOutput, public Component {
  public:
   void setTulleMotor(stepper::Stepper *stepper) { this->tulleStepper = stepper; }
   void setCurtainsMotor(stepper::Stepper *stepper) { this->curtainsStepper = stepper; }
@@ -246,7 +250,7 @@ class CurtainsController : public Component {
   void setCurtainsCloseSensor(binary_sensor::BinarySensor &button) { this->curtainsCloseButton = button; }
   void setSetSensor(binary_sensor::BinarySensor &button) { this->setButton = button; }
   void setModeSensor(binary_sensor::BinarySensor &button) { this->modeButton = button; }
-  void seDisplay(lcd_pcf8574::PCF8574LCDDisplay &display) { this->display = display; }
+  void setDisplay(lcd_pcf8574::PCF8574LCDDisplay &display) { this->display = display; }
 
   void setup();
   void loop();

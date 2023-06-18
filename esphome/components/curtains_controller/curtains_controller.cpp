@@ -294,13 +294,20 @@ void CurtainsController::initSteps() {
   registerSteps(adjustSteps(
       step_id::CalibrateCurtainsClose, "Use curtains open and close button to adjust curtains closing position",
       step_id::None, step_id::None, step_id::CalibrateCurtainsCloseStartAdjustOpen,
-      step_id::CalibrateCurtainsCloseStartAdjustClose, step_id::CalibrateCurtainsClose,
+      step_id::CalibrateCurtainsCloseStartAdjustClose, step_id::SetupComplete,
       step_id::CalibrateCurtainsCloseStartAdjustOpen, step_id::CalibrateCurtainsCloseStartAdjustClose,
       step_id::CalibrateCurtainsCloseAdjustOpen, step_id::CalibrateCurtainsCloseAdjustClose,
       "Adjusting curtains close position, opening by 400 steps",
       "Adjusting curtains close position, closing by 400 steps", curtainsStepper,
       [](GlobalState &globalState) { return globalState.curtainsClosePosition; },
       [](GlobalState &globalState, uint32_t position) { globalState.curtainsClosePosition = position; }, 400));
+
+  registerStep(
+      timeoutTextStep(step_id::SetupComplete, "Setup complete", 1000, step_id::Ready)
+          ->onEnter([this](GlobalState &globalState, button_state::ButtonState buttonState, uint32_t millisSinceStart) {
+            globalState.setupCompleted = true;
+            this->backupGlobalState();
+          }));
 }
 
 void CurtainsController::registerStep(StepNode *step) {
