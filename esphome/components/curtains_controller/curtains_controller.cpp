@@ -323,5 +323,8 @@ void CurtainsController::registerSteps(std::vector<StepNode *> *stepsToRegister)
   }
 }
 
+void CurtainsController::backupGlobalState() { globalStateStorage.save(&globalState); }
+void CurtainsController::restoreGlobalState() { globalStateStorage.load(&globalState); }
+
 };  // namespace curtains_controller
 };  // namespace esphome

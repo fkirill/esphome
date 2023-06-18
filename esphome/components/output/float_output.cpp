@@ -27,7 +27,7 @@ void FloatOutput::set_level(float state) {
 #ifdef USE_POWER_SUPPLY
   if (state > 0.0f) {  // ON
     this->power_.request();
-  } else {  // OFF
+  } else {             // OFF
     this->power_.unrequest();
   }
 #endif

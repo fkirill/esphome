@@ -6,6 +6,7 @@
 #include "components/binary_sensor/binary_sensor.h"
 #include "components/lcd_pcf8574/pcf8574_display.h"
 #include "esphome/components/output/float_output.h"
+#include "esphome/core/preferences.h"
 
 namespace esphome {
 namespace curtains_controller {
@@ -270,6 +271,8 @@ class CurtainsController : public output::FloatOutput, public Component {
   std::vector<StepNode *> steps = std::vector<StepNode *>();
   GlobalState globalState;
   unsigned long lastStepStarted;
+  static const uint32_t hash = 696104820;
+  ESPPreferenceObject globalStateStorage = global_preferences->make_preference(sizeof(GlobalState), hash, true);
 
   void onTulleOpenButtonStateChanged(bool state) { buttonState = state ? button_state::TulleOpen : button_state::None; }
   void onTulleCloseButtonStateChanged(bool state) {
