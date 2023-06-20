@@ -1,7 +1,4 @@
 #include "curtains_controller.h"
-#include "esphome/core/log.h"
-
-static const char *const TAG = "curtains_controller";
 
 namespace esphome {
 namespace curtains_controller {
@@ -88,8 +85,9 @@ StepNode *openingClosingStep(stepper::Stepper *tulleStepper, stepper::Stepper *c
       ->setCustomNextStep(
           [tulleStepper, curtainsStepper](GlobalState &globalState, button_state::ButtonState buttonState,
                                           uint32_t millisSinceStart) {
-            if (globalState.tulleState == curtains_state::Opening ||
-                globalState.tulleState == curtains_state::Closing || tulleStepper->has_reached_target()) {
+            if ((globalState.tulleState == curtains_state::Opening ||
+                 globalState.tulleState == curtains_state::Closing) &&
+                tulleStepper->has_reached_target()) {
               if (globalState.tulleState == curtains_state::Opening) {
                 globalState.tulleState = curtains_state::Open;
               }
@@ -97,8 +95,9 @@ StepNode *openingClosingStep(stepper::Stepper *tulleStepper, stepper::Stepper *c
                 globalState.tulleState = curtains_state::Closed;
               }
             }
-            if (globalState.curtainsState == curtains_state::Opening ||
-                globalState.curtainsState == curtains_state::Closing || curtainsStepper->has_reached_target()) {
+            if ((globalState.curtainsState == curtains_state::Opening ||
+                 globalState.curtainsState == curtains_state::Closing) &&
+                curtainsStepper->has_reached_target()) {
               if (globalState.curtainsState == curtains_state::Opening) {
                 globalState.curtainsState = curtains_state::Open;
               }
@@ -129,18 +128,24 @@ bool CurtainsController::verifyStepsConfiguration() {
   auto definedSteps = std::unordered_set<step_id::StepId>();
   auto undefinedSteps = std::unordered_set<step_id::StepId>();
   auto referencedSteps = std::unordered_set<step_id::StepId>();
-  for (int i = 0; i < steps.size(); i++) {
-    if (steps.at(i) != NULL) {
-      definedSteps.insert(steps.at(i)->getStepId());
+  for (auto i = 0; i < steps.size(); i++) {
+    if (steps[i] != NULL) {
+      definedSteps.insert(steps[i]->getStepId());
     } else {
       undefinedSteps.insert((step_id::StepId) i);
     }
+  }
+  for (auto i = undefinedSteps.begin(); i != undefinedSteps.end(); i++) {
+    ESP_LOGE(TAG, "Step is not defined: %d", *i);
   }
   for (int i = 0; i < steps.size(); i++) {
     if (steps.at(i) != NULL) {
       auto outboundSteps = steps.at(i)->getAllOutboundSteps();
       for (auto iter = outboundSteps.begin(); iter != outboundSteps.end(); ++iter) {
-        referencedSteps.insert(*iter);
+        if (*iter != step_id::None) {
+          ESP_LOGI(TAG, "Step dependency: %d/%d", i, *iter);
+          referencedSteps.insert(*iter);
+        }
       }
     }
   }
@@ -155,8 +160,16 @@ bool CurtainsController::verifyStepsConfiguration() {
       }
     }
     if (!foundMatch) {
-      ESP_LOGI(TAG, "Step is being referred to, but is not defined: %d", stepId);
+      ESP_LOGE(TAG, "Step is being referred to, but is not defined: %d", stepId);
       res = false;
+    }
+  }
+  if (!res) {
+    ESP_LOGE(TAG, "Please see diagnostic step dump below");
+    for (int i = 0; i < steps.size(); i++) {
+      if (steps.at(i) != NULL) {
+        steps.at(i)->dumpConfig();
+      }
     }
   }
   return res;
@@ -244,15 +257,21 @@ void CurtainsController::setup() {
   buttonState = button_state::None;
   lastStepStarted = millis();
   currentStep = step_id::Initial;
-  tulleOpenButton->add_on_state_callback([this](bool state) { this->onTulleOpenButtonStateChanged(state); });
-  tulleCloseButton->add_on_state_callback([this](bool state) { this->onTulleCloseButtonStateChanged(state); });
-  curtainsOpenButton->add_on_state_callback([this](bool state) { this->onCurtainsOpenButtonStateChanged(state); });
-  curtainsCloseButton->add_on_state_callback([this](bool state) { this->onCurtainsCloseButtonStateChanged(state); });
-  setButton->add_on_state_callback([this](bool state) { this->onSetButtonStateChanged(state); });
-  modeButton->add_on_state_callback([this](bool state) { this->onModeButtonStateChanged(state); });
+  tulleOpenButton->add_on_press_callback([this]() { this->onTulleOpenButtonStateChanged(); });
+  tulleCloseButton->add_on_press_callback([this]() { this->onTulleCloseButtonStateChanged(); });
+  curtainsOpenButton->add_on_press_callback([this]() { this->onCurtainsOpenButtonStateChanged(); });
+  curtainsCloseButton->add_on_press_callback([this]() { this->onCurtainsCloseButtonStateChanged(); });
+  setButton->add_on_press_callback([this]() { this->onSetButtonStateChanged(); });
+  modeButton->add_on_press_callback([this]() { this->onModeButtonStateChanged(); });
   restoreGlobalState();
   display->set_update_interval(SCHEDULER_DONT_RUN);
-  globalState.setupCompleted = false;
+  globalState.setupCompleted = true;
+  globalState.tulleOpenPosition = 0;
+  globalState.tulleClosePosition = 3000;
+  globalState.curtainsOpenPosition = 0;
+  globalState.curtainsClosePosition = 3000;
+  globalState.tulleState = curtains_state::Open;
+  globalState.curtainsState = curtains_state::Open;
   if (!verifyStepsConfiguration()) {
     ESP_LOGE(TAG, "Step verification failed, see previous log messages, marking the ocmponent as failed");
     mark_failed();
@@ -283,8 +302,8 @@ void CurtainsController::loop() {
   currentStepNode->enter(globalState, buttonState, 0);
 }
 
-void CurtainsController::initSteps() {
-  registerStep(customRoutingOnlyStep(
+StepNode *initialStep() {
+  return customRoutingOnlyStep(
       step_id::Initial,
       [](GlobalState &globalState, button_state::ButtonState button_state, uint32_t millisSinseStart) {
         return globalState.setupCompleted ? step_id::Ready : step_id::CalibrateTulleOpen;
@@ -294,7 +313,11 @@ void CurtainsController::initSteps() {
         res.insert(step_id::Ready);
         res.insert(step_id::CalibrateTulleOpen);
         return res;
-      }));
+      });
+}
+
+void CurtainsController::initSteps() {
+  registerStep(initialStep());
   registerStep(readyStep());
   std::function<void(GlobalState &, curtains_state::CurtainState)> setTulleState =
       [](GlobalState &globalState, curtains_state::CurtainState state) { globalState.tulleState = state; };
@@ -312,7 +335,7 @@ void CurtainsController::initSteps() {
                              globalState.curtainsState, curtains_state::Closed, setCurtainsState,
                              curtains_state::Opening, step_id::OpeningClosing, step_id::CurtainsAlreadyOpen,
                              step_id::AlreadyInMotion));
-  registerStep(timeoutTextStep(step_id::CurtainsAlreadyOpen, "Curtains already opened", 1000, step_id::OpeningClosing));
+  registerStep(timeoutTextStep(step_id::CurtainsAlreadyOpen, "Curtains already open", 1000, step_id::OpeningClosing));
   registerStep(openCloseStep(step_id::CloseCurtains, curtainsStepper, globalState.curtainsClosePosition,
                              globalState.curtainsState, curtains_state::Open, setCurtainsState, curtains_state::Closing,
                              step_id::OpeningClosing, step_id::CurtainsAlreadyClosed, step_id::AlreadyInMotion));

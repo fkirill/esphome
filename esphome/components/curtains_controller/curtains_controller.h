@@ -4,12 +4,14 @@
 #include <WString.h>
 #include "esphome/core/component.h"
 #include "esphome/components/stepper/stepper.h"
-#include "esphome/components/binary_sensor/binary_sensor.h"
+#include "esphome/components/button/button.h"
 #include "esphome/components/lcd_pcf8574/pcf8574_display.h"
 #include "esphome/components/output/float_output.h"
 #include "esphome/core/preferences.h"
 #include "esphome/core/hal.h"
+#include "esphome/core/log.h"
 
+static const char *const TAG = "curtains_controller";
 namespace esphome {
 namespace curtains_controller {
 
@@ -81,11 +83,11 @@ typedef std::function<void(GlobalState &, button_state::ButtonState, uint32_t)> 
 
 class TimeoutAndNextStep {
  public:
-  TimeoutAndNextStep(uint32_t timeoutMillis, step_id::StepId &nextStep)
+  TimeoutAndNextStep(uint32_t timeoutMillis, step_id::StepId nextStep)
       : timeoutMillis(timeoutMillis), nextStep(nextStep) {}
 
   const uint32_t timeoutMillis;
-  const step_id::StepId &nextStep;
+  const step_id::StepId nextStep;
 };
 
 class StepNode {
@@ -146,12 +148,6 @@ class StepNode {
 
   step_id::StepId nextStep(GlobalState &globalState, button_state::ButtonState buttonState,
                            uint32_t millis_since_start) {
-    if (customNextStep != NULL) {
-      return customNextStep(globalState, buttonState, millis_since_start);
-    }
-    if (timeoutStep != NULL && timeoutStep->timeoutMillis <= millis_since_start) {
-      return timeoutStep->nextStep;
-    }
     switch (buttonState) {
       case button_state::TulleOpen:
         return tulleOpenStep;
@@ -166,13 +162,19 @@ class StepNode {
       case button_state::Mode:
         return modeStep;
     }
+    if (customNextStep != NULL) {
+      return customNextStep(globalState, buttonState, millis_since_start);
+    }
+    if (timeoutStep != NULL && timeoutStep->timeoutMillis <= millis_since_start) {
+      return timeoutStep->nextStep;
+    }
     return step_id::None;
   }
 
   String getDisplayText(GlobalState &globalState, button_state::ButtonState buttonState, uint32_t millis_since_start) {
-    // if (customDisplayText.has_value()) {
-    //   return customDisplayText.value()(globalState, buttonState, millis_since_start);
-    // }
+    if (customDisplayText != NULL) {
+      return customDisplayText(globalState, buttonState, millis_since_start);
+    }
     return displayText;
   }
 
@@ -189,9 +191,6 @@ class StepNode {
   }
 
   std::unordered_set<step_id::StepId> getAllOutboundSteps() {
-    if (customGetNextSteps != NULL) {
-      return customGetNextSteps();
-    }
     auto res = std::unordered_set<step_id::StepId>();
     if (tulleOpenStep != step_id::None) {
       res.insert(tulleOpenStep);
@@ -214,6 +213,12 @@ class StepNode {
     if (timeoutStep != NULL) {
       res.insert(timeoutStep->nextStep);
     }
+    if (customGetNextSteps != NULL) {
+      auto customNextSteps = customGetNextSteps();
+      for (auto i = customNextSteps.begin(); i != customNextSteps.end(); i++) {
+        res.insert(*i);
+      }
+    }
     return res;
   }
 
@@ -224,6 +229,28 @@ class StepNode {
   StepNode *onExit(enterExitFn exitFn) {
     this->exitFn = exitFn;
     return this;
+  }
+
+  void dumpConfig() {
+    ESP_LOGCONFIG(TAG, "StepId = %d", stepId);
+    ESP_LOGCONFIG(TAG, "    DisplayText = %s", displayText.c_str());
+    ESP_LOGCONFIG(TAG, "    enterFn = %s", enterFn != NULL ? "present" : "NULL");
+    ESP_LOGCONFIG(TAG, "    exitFn = %s", exitFn != NULL ? "present" : "NULL");
+    ESP_LOGCONFIG(TAG, "    tulleOpenStep = %d", tulleOpenStep);
+    ESP_LOGCONFIG(TAG, "    tulleCloseStep = %d", tulleCloseStep);
+    ESP_LOGCONFIG(TAG, "    curtainsOpenStep = %d", curtainsOpenStep);
+    ESP_LOGCONFIG(TAG, "    curtainsCloseStep = %d", curtainsCloseStep);
+    ESP_LOGCONFIG(TAG, "    setStep = %d", setStep);
+    ESP_LOGCONFIG(TAG, "    modeStep = %d", modeStep);
+    ESP_LOGCONFIG(TAG, "    customDisplayText = %s", customDisplayText != NULL ? "present" : "NULL");
+    ESP_LOGCONFIG(TAG, "    customNextStep = %s", customNextStep != NULL ? "present" : "NULL");
+    ESP_LOGCONFIG(TAG, "    customGetNextSteps = %s", customGetNextSteps != NULL ? "present" : "NULL");
+    if (timeoutStep != NULL) {
+      ESP_LOGCONFIG(TAG, "    timeoutStep.timeoutMillis: %d, nextStep: %d", timeoutStep->timeoutMillis,
+                    timeoutStep->nextStep);
+    } else {
+      ESP_LOGCONFIG(TAG, "    timeoutStep = NULL");
+    }
   }
 
  private:
@@ -248,12 +275,12 @@ class CurtainsController : public output::FloatOutput, public Component {
   CurtainsController() {}
   void setTulleMotor(stepper::Stepper *stepper) { this->tulleStepper = stepper; }
   void setCurtainsMotor(stepper::Stepper *stepper) { this->curtainsStepper = stepper; }
-  void setTulleOpenSensor(binary_sensor::BinarySensor *button) { this->tulleOpenButton = button; }
-  void setTulleCloseSensor(binary_sensor::BinarySensor *button) { this->tulleCloseButton = button; }
-  void setCurtainsOpenSensor(binary_sensor::BinarySensor *button) { this->curtainsOpenButton = button; }
-  void setCurtainsCloseSensor(binary_sensor::BinarySensor *button) { this->curtainsCloseButton = button; }
-  void setSetSensor(binary_sensor::BinarySensor *button) { this->setButton = button; }
-  void setModeSensor(binary_sensor::BinarySensor *button) { this->modeButton = button; }
+  void setTulleOpenButton(button::Button *button) { this->tulleOpenButton = button; }
+  void setTulleCloseButton(button::Button *button) { this->tulleCloseButton = button; }
+  void setCurtainsOpenButton(button::Button *button) { this->curtainsOpenButton = button; }
+  void setCurtainsCloseButton(button::Button *button) { this->curtainsCloseButton = button; }
+  void setSetButton(button::Button *button) { this->setButton = button; }
+  void setModeButton(button::Button *button) { this->modeButton = button; }
   void setDisplay(lcd_pcf8574::PCF8574LCDDisplay *display) { this->display = display; }
 
   void setup() override;
@@ -264,12 +291,12 @@ class CurtainsController : public output::FloatOutput, public Component {
  private:
   stepper::Stepper *tulleStepper = NULL;
   stepper::Stepper *curtainsStepper = NULL;
-  binary_sensor::BinarySensor *tulleOpenButton = NULL;
-  binary_sensor::BinarySensor *tulleCloseButton = NULL;
-  binary_sensor::BinarySensor *curtainsOpenButton = NULL;
-  binary_sensor::BinarySensor *curtainsCloseButton = NULL;
-  binary_sensor::BinarySensor *setButton = NULL;
-  binary_sensor::BinarySensor *modeButton = NULL;
+  button::Button *tulleOpenButton = NULL;
+  button::Button *tulleCloseButton = NULL;
+  button::Button *curtainsOpenButton = NULL;
+  button::Button *curtainsCloseButton = NULL;
+  button::Button *setButton = NULL;
+  button::Button *modeButton = NULL;
   lcd_pcf8574::PCF8574LCDDisplay *display = NULL;
   button_state::ButtonState buttonState = button_state::None;
   step_id::StepId currentStep = step_id::Initial;
@@ -280,18 +307,12 @@ class CurtainsController : public output::FloatOutput, public Component {
   ESPPreferenceObject globalStateStorage = global_preferences->make_preference(sizeof(GlobalState), hash, true);
   String lastPrintedMessage = "";
 
-  void onTulleOpenButtonStateChanged(bool state) { buttonState = state ? button_state::TulleOpen : button_state::None; }
-  void onTulleCloseButtonStateChanged(bool state) {
-    buttonState = state ? button_state::TulleClose : button_state::None;
-  }
-  void onCurtainsOpenButtonStateChanged(bool state) {
-    buttonState = state ? button_state::CurtainsOpen : button_state::None;
-  }
-  void onCurtainsCloseButtonStateChanged(bool state) {
-    buttonState = state ? button_state::CurtainsClose : button_state::None;
-  }
-  void onSetButtonStateChanged(bool state) { buttonState = state ? button_state::Set : button_state::None; }
-  void onModeButtonStateChanged(bool state) { buttonState = state ? button_state::Mode : button_state::None; }
+  void onTulleOpenButtonStateChanged() { buttonState = button_state::TulleOpen; }
+  void onTulleCloseButtonStateChanged() { buttonState = button_state::TulleClose; }
+  void onCurtainsOpenButtonStateChanged() { buttonState = button_state::CurtainsOpen; }
+  void onCurtainsCloseButtonStateChanged() { buttonState = button_state::CurtainsClose; }
+  void onSetButtonStateChanged() { buttonState = button_state::Set; }
+  void onModeButtonStateChanged() { buttonState = button_state::Mode; }
   void registerStep(StepNode *step);
   void registerSteps(std::vector<StepNode *> steps);
   void restoreGlobalState();
