@@ -1,12 +1,14 @@
 #pragma once
 
 #include <unordered_set>
+#include <WString.h>
 #include "esphome/core/component.h"
-#include "components/stepper/stepper.h"
-#include "components/binary_sensor/binary_sensor.h"
-#include "components/lcd_pcf8574/pcf8574_display.h"
+#include "esphome/components/stepper/stepper.h"
+#include "esphome/components/binary_sensor/binary_sensor.h"
+#include "esphome/components/lcd_pcf8574/pcf8574_display.h"
 #include "esphome/components/output/float_output.h"
 #include "esphome/core/preferences.h"
+#include "esphome/core/hal.h"
 
 namespace esphome {
 namespace curtains_controller {
@@ -73,7 +75,7 @@ enum StepId {
 };  // namespace step_id
 
 typedef std::function<step_id::StepId(GlobalState &, button_state::ButtonState, uint32_t)> customNextStepFn;
-typedef std::function<std::unordered_set<step_id::StepId> *()> customGetNextStepsFn;
+typedef std::function<std::unordered_set<step_id::StepId>()> customGetNextStepsFn;
 typedef std::function<String(GlobalState &, button_state::ButtonState, uint32_t)> customDislayTextFn;
 typedef std::function<void(GlobalState &, button_state::ButtonState, uint32_t)> enterExitFn;
 
@@ -186,31 +188,31 @@ class StepNode {
     }
   }
 
-  std::unordered_set<step_id::StepId> *getAllOutboundSteps() {
+  std::unordered_set<step_id::StepId> getAllOutboundSteps() {
     if (customGetNextSteps != NULL) {
       return customGetNextSteps();
     }
-    auto res = new std::unordered_set<step_id::StepId>();
+    auto res = std::unordered_set<step_id::StepId>();
     if (tulleOpenStep != step_id::None) {
-      res += tulleOpenStep;
+      res.insert(tulleOpenStep);
     }
     if (tulleCloseStep != step_id::None) {
-      res += tulleCloseStep;
+      res.insert(tulleCloseStep);
     }
     if (curtainsOpenStep != step_id::None) {
-      res += curtainsOpenStep;
+      res.insert(curtainsOpenStep);
     }
     if (curtainsCloseStep != step_id::None) {
-      res += curtainsCloseStep;
+      res.insert(curtainsCloseStep);
     }
     if (setStep != step_id::None) {
-      res += setStep;
+      res.insert(setStep);
     }
     if (modeStep != step_id::None) {
-      res += modeStep;
+      res.insert(modeStep);
     }
     if (timeoutStep != NULL) {
-      res += timeoutStep->nextStep;
+      res.insert(timeoutStep->nextStep);
     }
     return res;
   }
@@ -243,36 +245,40 @@ class StepNode {
 
 class CurtainsController : public output::FloatOutput, public Component {
  public:
+  CurtainsController() {}
   void setTulleMotor(stepper::Stepper *stepper) { this->tulleStepper = stepper; }
   void setCurtainsMotor(stepper::Stepper *stepper) { this->curtainsStepper = stepper; }
-  void setTulleOpenSensor(binary_sensor::BinarySensor &button) { this->tulleOpenButton = button; }
-  void setTulleCloseSensor(binary_sensor::BinarySensor &button) { this->tulleCloseButton = button; }
-  void setCurtainsOpenSensor(binary_sensor::BinarySensor &button) { this->curtainsOpenButton = button; }
-  void setCurtainsCloseSensor(binary_sensor::BinarySensor &button) { this->curtainsCloseButton = button; }
-  void setSetSensor(binary_sensor::BinarySensor &button) { this->setButton = button; }
-  void setModeSensor(binary_sensor::BinarySensor &button) { this->modeButton = button; }
-  void setDisplay(lcd_pcf8574::PCF8574LCDDisplay &display) { this->display = display; }
+  void setTulleOpenSensor(binary_sensor::BinarySensor *button) { this->tulleOpenButton = button; }
+  void setTulleCloseSensor(binary_sensor::BinarySensor *button) { this->tulleCloseButton = button; }
+  void setCurtainsOpenSensor(binary_sensor::BinarySensor *button) { this->curtainsOpenButton = button; }
+  void setCurtainsCloseSensor(binary_sensor::BinarySensor *button) { this->curtainsCloseButton = button; }
+  void setSetSensor(binary_sensor::BinarySensor *button) { this->setButton = button; }
+  void setModeSensor(binary_sensor::BinarySensor *button) { this->modeButton = button; }
+  void setDisplay(lcd_pcf8574::PCF8574LCDDisplay *display) { this->display = display; }
 
-  void setup();
-  void loop();
+  void setup() override;
+  void loop() override;
+
+  void write_state(float state) {}
 
  private:
-  stepper::Stepper *tulleStepper;
-  stepper::Stepper *curtainsStepper;
-  binary_sensor::BinarySensor &tulleOpenButton;
-  binary_sensor::BinarySensor &tulleCloseButton;
-  binary_sensor::BinarySensor &curtainsOpenButton;
-  binary_sensor::BinarySensor &curtainsCloseButton;
-  binary_sensor::BinarySensor &setButton;
-  binary_sensor::BinarySensor &modeButton;
-  lcd_pcf8574::PCF8574LCDDisplay &display;
-  button_state::ButtonState buttonState;
-  step_id::StepId currentStep;
+  stepper::Stepper *tulleStepper = NULL;
+  stepper::Stepper *curtainsStepper = NULL;
+  binary_sensor::BinarySensor *tulleOpenButton = NULL;
+  binary_sensor::BinarySensor *tulleCloseButton = NULL;
+  binary_sensor::BinarySensor *curtainsOpenButton = NULL;
+  binary_sensor::BinarySensor *curtainsCloseButton = NULL;
+  binary_sensor::BinarySensor *setButton = NULL;
+  binary_sensor::BinarySensor *modeButton = NULL;
+  lcd_pcf8574::PCF8574LCDDisplay *display = NULL;
+  button_state::ButtonState buttonState = button_state::None;
+  step_id::StepId currentStep = step_id::Initial;
   std::vector<StepNode *> steps = std::vector<StepNode *>();
   GlobalState globalState;
-  unsigned long lastStepStarted;
+  unsigned long lastStepStarted = millis();
   static const uint32_t hash = 696104820;
   ESPPreferenceObject globalStateStorage = global_preferences->make_preference(sizeof(GlobalState), hash, true);
+  String lastPrintedMessage = "";
 
   void onTulleOpenButtonStateChanged(bool state) { buttonState = state ? button_state::TulleOpen : button_state::None; }
   void onTulleCloseButtonStateChanged(bool state) {
@@ -287,12 +293,13 @@ class CurtainsController : public output::FloatOutput, public Component {
   void onSetButtonStateChanged(bool state) { buttonState = state ? button_state::Set : button_state::None; }
   void onModeButtonStateChanged(bool state) { buttonState = state ? button_state::Mode : button_state::None; }
   void registerStep(StepNode *step);
-  void registerSteps(std::vector<StepNode *> *steps);
+  void registerSteps(std::vector<StepNode *> steps);
   void restoreGlobalState();
   void backupGlobalState();
   void initSteps();
   StepNode *step(step_id::StepId stepId) { return steps[stepId]; }
   void printText(String text);
+  bool verifyStepsConfiguration();
 };
 };  // namespace curtains_controller
 };  // namespace esphome

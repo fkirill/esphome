@@ -1,4 +1,7 @@
 #include "curtains_controller.h"
+#include "esphome/core/log.h"
+
+static const char *const TAG = "curtains_controller";
 
 namespace esphome {
 namespace curtains_controller {
@@ -41,10 +44,10 @@ StepNode *openCloseStep(step_id::StepId stepId, stepper::Stepper *stepper, uint3
             return alreadyAtStateStepId;
           },
           [nextStepId, alreadyInMotionStepId, alreadyAtStateStepId]() {
-            auto res = new std::unordered_set<step_id::StepId>();
-            res += nextStepId;
-            res += alreadyInMotionStepId;
-            res += alreadyAtStateStepId;
+            auto res = std::unordered_set<step_id::StepId>();
+            res.insert(nextStepId);
+            res.insert(alreadyInMotionStepId);
+            res.insert(alreadyAtStateStepId);
             return res;
           })
       ->onEnter([currentState, expectedState, stepper, targetPosition, setStateFn, setState](
@@ -107,12 +110,12 @@ StepNode *openingClosingStep(stepper::Stepper *tulleStepper, stepper::Stepper *c
             return allMotorsStopped ? step_id::Ready : step_id::None;
           },
           []() {
-            auto res = new std::unordered_set<step_id::StepId>();
-            res += step_id::OpenTulle;
-            res += step_id::CloseTulle;
-            res += step_id::OpenCurtains;
-            res += step_id::CloseCurtains;
-            res += step_id::Ready;
+            auto res = std::unordered_set<step_id::StepId>();
+            res.insert(step_id::OpenTulle);
+            res.insert(step_id::CloseTulle);
+            res.insert(step_id::OpenCurtains);
+            res.insert(step_id::CloseCurtains);
+            res.insert(step_id::Ready);
             return res;
           })
       ->setCustomDisplayText(
@@ -122,13 +125,52 @@ StepNode *openingClosingStep(stepper::Stepper *tulleStepper, stepper::Stepper *c
           });
 }
 
-std::vector<StepNode *> *adjustSteps(
-    step_id::StepId mainStepId, String mainDisplayText, step_id::StepId tulleOpenStepId,
-    step_id::StepId tulleCloseStepId, step_id::StepId curtainsOpenStepId, step_id::StepId curtainsCloseStepId,
-    step_id::StepId nextStepId, step_id::StepId startAdjustOpenStepId, step_id::StepId startAdjustCloseStepId,
-    step_id::StepId adjustOpenStepId, step_id::StepId adjustCloseStepId, String adjustOpenDisplayText,
-    String adjustCloseDisplayText, stepper::Stepper *stepper, std::function<uint32_t(GlobalState &)> positionGetter,
-    std::function<void(GlobalState &, uint32_t)> positionSetter, uint32_t stepsIncrement) {
+bool CurtainsController::verifyStepsConfiguration() {
+  auto definedSteps = std::unordered_set<step_id::StepId>();
+  auto undefinedSteps = std::unordered_set<step_id::StepId>();
+  auto referencedSteps = std::unordered_set<step_id::StepId>();
+  for (int i = 0; i < steps.size(); i++) {
+    if (steps.at(i) != NULL) {
+      definedSteps.insert(steps.at(i)->getStepId());
+    } else {
+      undefinedSteps.insert((step_id::StepId) i);
+    }
+  }
+  for (int i = 0; i < steps.size(); i++) {
+    if (steps.at(i) != NULL) {
+      auto outboundSteps = steps.at(i)->getAllOutboundSteps();
+      for (auto iter = outboundSteps.begin(); iter != outboundSteps.end(); ++iter) {
+        referencedSteps.insert(*iter);
+      }
+    }
+  }
+  bool res = true;
+  for (auto iter = referencedSteps.begin(); iter != referencedSteps.end(); ++iter) {
+    step_id::StepId stepId = *iter;
+    bool foundMatch = false;
+    for (auto iter2 = definedSteps.begin(); iter2 != definedSteps.end(); ++iter2) {
+      if (*iter2 == stepId) {
+        foundMatch = true;
+        break;
+      }
+    }
+    if (!foundMatch) {
+      ESP_LOGI(TAG, "Step is being referred to, but is not defined: %d", stepId);
+      res = false;
+    }
+  }
+  return res;
+}
+
+std::vector<StepNode *> adjustSteps(step_id::StepId mainStepId, String mainDisplayText, step_id::StepId tulleOpenStepId,
+                                    step_id::StepId tulleCloseStepId, step_id::StepId curtainsOpenStepId,
+                                    step_id::StepId curtainsCloseStepId, step_id::StepId nextStepId,
+                                    step_id::StepId startAdjustOpenStepId, step_id::StepId startAdjustCloseStepId,
+                                    step_id::StepId adjustOpenStepId, step_id::StepId adjustCloseStepId,
+                                    String adjustOpenDisplayText, String adjustCloseDisplayText,
+                                    stepper::Stepper *stepper, std::function<uint32_t(GlobalState &)> positionGetter,
+                                    std::function<void(GlobalState &, uint32_t)> positionSetter,
+                                    uint32_t stepsIncrement) {
   auto mainStep = (new StepNode(mainStepId, mainDisplayText))
                       ->onTulleOpen(tulleOpenStepId)
                       ->onTulleClose(tulleCloseStepId)
@@ -146,8 +188,8 @@ std::vector<StepNode *> *adjustSteps(
           ->setCustomNextStep([adjustOpenStepId](GlobalState &globalState, button_state::ButtonState buttonState,
                                                  uint32_t millisSinceStart) { return adjustOpenStepId; },
                               [adjustOpenStepId]() {
-                                auto res = new std::unordered_set<step_id::StepId>();
-                                res += adjustOpenStepId;
+                                auto res = std::unordered_set<step_id::StepId>();
+                                res.insert(adjustOpenStepId);
                                 return res;
                               });
   auto startAdjustCloseStep =
@@ -161,8 +203,8 @@ std::vector<StepNode *> *adjustSteps(
           ->setCustomNextStep([adjustCloseStepId](GlobalState &globalState, button_state::ButtonState buttonState,
                                                   uint32_t millisSinceStart) { return adjustCloseStepId; },
                               [adjustCloseStepId]() {
-                                auto res = new std::unordered_set<step_id::StepId>();
-                                res += adjustCloseStepId;
+                                auto res = std::unordered_set<step_id::StepId>();
+                                res.insert(adjustCloseStepId);
                                 return res;
                               });
   auto adjustOpenStep = (new StepNode(adjustOpenStepId, adjustOpenDisplayText))
@@ -172,8 +214,8 @@ std::vector<StepNode *> *adjustSteps(
                                   return stepper->has_reached_target() ? mainStepId : step_id::None;
                                 },
                                 [mainStepId]() {
-                                  auto res = new std::unordered_set<step_id::StepId>();
-                                  res += mainStepId;
+                                  auto res = std::unordered_set<step_id::StepId>();
+                                  res.insert(mainStepId);
                                   return res;
                                 });
   auto adjustCloseStep = (new StepNode(adjustCloseStepId, adjustCloseDisplayText))
@@ -183,17 +225,17 @@ std::vector<StepNode *> *adjustSteps(
                                    return stepper->has_reached_target() ? mainStepId : step_id::None;
                                  },
                                  [mainStepId]() {
-                                   auto res = new std::unordered_set<step_id::StepId>();
-                                   res += mainStepId;
+                                   auto res = std::unordered_set<step_id::StepId>();
+                                   res.insert(mainStepId);
                                    return res;
                                  });
 
-  auto steps = new std::vector<StepNode *>(5);
-  steps->assign(0, mainStep);
-  steps->assign(1, startAdjustOpenStep);
-  steps->assign(2, startAdjustCloseStep);
-  steps->assign(3, adjustOpenStep);
-  steps->assign(4, adjustCloseStep);
+  auto steps = std::vector<StepNode *>();
+  steps.push_back(mainStep);
+  steps.push_back(startAdjustOpenStep);
+  steps.push_back(startAdjustCloseStep);
+  steps.push_back(adjustOpenStep);
+  steps.push_back(adjustCloseStep);
   return steps;
 }
 
@@ -202,20 +244,30 @@ void CurtainsController::setup() {
   buttonState = button_state::None;
   lastStepStarted = millis();
   currentStep = step_id::Initial;
-  tulleOpenButton.add_on_state_callback([this](bool state) { this->onTulleOpenButtonStateChanged(state); });
-  tulleCloseButton.add_on_state_callback([this](bool state) { this->onTulleCloseButtonStateChanged(state); });
-  curtainsOpenButton.add_on_state_callback([this](bool state) { this->onCurtainsOpenButtonStateChanged(state); });
-  curtainsCloseButton.add_on_state_callback([this](bool state) { this->onCurtainsCloseButtonStateChanged(state); });
-  setButton.add_on_state_callback([this](bool state) { this->onSetButtonStateChanged(state); });
-  modeButton.add_on_state_callback([this](bool state) { this->onModeButtonStateChanged(state); });
+  tulleOpenButton->add_on_state_callback([this](bool state) { this->onTulleOpenButtonStateChanged(state); });
+  tulleCloseButton->add_on_state_callback([this](bool state) { this->onTulleCloseButtonStateChanged(state); });
+  curtainsOpenButton->add_on_state_callback([this](bool state) { this->onCurtainsOpenButtonStateChanged(state); });
+  curtainsCloseButton->add_on_state_callback([this](bool state) { this->onCurtainsCloseButtonStateChanged(state); });
+  setButton->add_on_state_callback([this](bool state) { this->onSetButtonStateChanged(state); });
+  modeButton->add_on_state_callback([this](bool state) { this->onModeButtonStateChanged(state); });
   restoreGlobalState();
+  display->set_update_interval(SCHEDULER_DONT_RUN);
+  globalState.setupCompleted = false;
+  if (!verifyStepsConfiguration()) {
+    ESP_LOGE(TAG, "Step verification failed, see previous log messages, marking the ocmponent as failed");
+    mark_failed();
+  }
 }
 
 void CurtainsController::loop() {
   unsigned long nowMillis = millis();
   unsigned long millisSinceStart = nowMillis - lastStepStarted;
   StepNode *currentStepNode = step(currentStep);
+  if (currentStepNode == NULL) {
+    ESP_LOGI(TAG, "currentStepNode == null, stepId = %d", currentStep);
+  }
   auto nextStep = currentStepNode->nextStep(globalState, buttonState, millisSinceStart);
+  buttonState = button_state::None;
   if (nextStep == step_id::None) {
     String text = currentStepNode->getDisplayText(globalState, buttonState, millisSinceStart);
     printText(text);
@@ -224,6 +276,9 @@ void CurtainsController::loop() {
   currentStepNode->exit(globalState, buttonState, millisSinceStart);
   currentStep = nextStep;
   currentStepNode = step(currentStep);
+  if (currentStepNode == NULL) {
+    ESP_LOGI(TAG, "nextStepNode == null, stepId = %d", currentStep);
+  }
   lastStepStarted = nowMillis;
   currentStepNode->enter(globalState, buttonState, 0);
 }
@@ -235,9 +290,9 @@ void CurtainsController::initSteps() {
         return globalState.setupCompleted ? step_id::Ready : step_id::CalibrateTulleOpen;
       },
       []() {
-        auto res = new std::unordered_set<step_id::StepId>();
-        res += step_id::Ready;
-        res += step_id::CalibrateTulleOpen;
+        auto res = std::unordered_set<step_id::StepId>();
+        res.insert(step_id::Ready);
+        res.insert(step_id::CalibrateTulleOpen);
         return res;
       }));
   registerStep(readyStep());
@@ -248,16 +303,21 @@ void CurtainsController::initSteps() {
   registerStep(openCloseStep(step_id::OpenTulle, tulleStepper, globalState.tulleOpenPosition, globalState.tulleState,
                              curtains_state::Closed, setTulleState, curtains_state::Opening, step_id::OpeningClosing,
                              step_id::TulleAlreadyOpen, step_id::AlreadyInMotion));
+  registerStep(timeoutTextStep(step_id::TulleAlreadyOpen, "Tulle already open", 1000, step_id::OpeningClosing));
   registerStep(openCloseStep(step_id::CloseTulle, tulleStepper, globalState.tulleClosePosition, globalState.tulleState,
                              curtains_state::Open, setTulleState, curtains_state::Closing, step_id::OpeningClosing,
                              step_id::TulleAlreadyClosed, step_id::AlreadyInMotion));
+  registerStep(timeoutTextStep(step_id::TulleAlreadyClosed, "Tulle already closed", 1000, step_id::OpeningClosing));
   registerStep(openCloseStep(step_id::OpenCurtains, curtainsStepper, globalState.curtainsOpenPosition,
                              globalState.curtainsState, curtains_state::Closed, setCurtainsState,
                              curtains_state::Opening, step_id::OpeningClosing, step_id::CurtainsAlreadyOpen,
                              step_id::AlreadyInMotion));
+  registerStep(timeoutTextStep(step_id::CurtainsAlreadyOpen, "Curtains already opened", 1000, step_id::OpeningClosing));
   registerStep(openCloseStep(step_id::CloseCurtains, curtainsStepper, globalState.curtainsClosePosition,
                              globalState.curtainsState, curtains_state::Open, setCurtainsState, curtains_state::Closing,
                              step_id::OpeningClosing, step_id::CurtainsAlreadyClosed, step_id::AlreadyInMotion));
+  registerStep(
+      timeoutTextStep(step_id::CurtainsAlreadyClosed, "Curtains already closed", 1000, step_id::OpeningClosing));
   registerStep(openingClosingStep(tulleStepper, curtainsStepper));
   registerStep(timeoutTextStep(step_id::AlreadyInMotion, "Tulle or Curtains are already in motion", 1000,
                                step_id::OpeningClosing));
@@ -311,20 +371,41 @@ void CurtainsController::initSteps() {
 }
 
 void CurtainsController::registerStep(StepNode *step) {
+  ESP_LOGI(TAG, "registering step address %d", step);
+  ESP_LOGI(TAG, "registering step id %d", step->getStepId());
+
   if (steps.size() < step->getStepId() + 1) {
     steps.resize(step->getStepId() + 1);
   }
   steps[step->getStepId()] = step;
 }
 
-void CurtainsController::registerSteps(std::vector<StepNode *> *stepsToRegister) {
-  for (int i = 0; i < stepsToRegister->size(); i++) {
-    registerStep(stepsToRegister->at(i));
+void CurtainsController::registerSteps(std::vector<StepNode *> stepsToRegister) {
+  for (int i = 0; i < stepsToRegister.size(); i++) {
+    registerStep(stepsToRegister.at(i));
   }
 }
 
 void CurtainsController::backupGlobalState() { globalStateStorage.save(&globalState); }
 void CurtainsController::restoreGlobalState() { globalStateStorage.load(&globalState); }
 
+bool isDisplayReady(lcd_pcf8574::PCF8574LCDDisplay *display) {
+  return (display->get_component_state() & COMPONENT_STATE_MASK) == COMPONENT_STATE_LOOP ||
+         (display->get_component_state() & COMPONENT_STATE_MASK) == COMPONENT_STATE_SETUP;
+}
+
+void CurtainsController::printText(String text) {
+  if (text != lastPrintedMessage && isDisplayReady(display)) {
+    lastPrintedMessage = text;
+    if (!display->is_failed()) {
+      ESP_LOGI(TAG, "actually printing the text: %s", text.c_str());
+      display->clear();
+      display->print(text.c_str());
+      display->display();
+    } else {
+      ESP_LOGI(TAG, "display is failed");
+    }
+  }
+}
 };  // namespace curtains_controller
 };  // namespace esphome

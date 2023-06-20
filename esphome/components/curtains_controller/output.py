@@ -7,14 +7,15 @@ CODEOWNERS = ["@kfr"]
 DEPENDENCIES = []
 
 
-rp2040_pwm_ns = cg.esphome_ns.namespace("curtains_controller")
-RP2040PWM = rp2040_pwm_ns.class_("CurtainsController", output.FloatOutput, cg.Component)
+curtains_controller_ns = cg.esphome_ns.namespace("curtains_controller")
+curtains_controller = curtains_controller_ns.class_("CurtainsController", output.FloatOutput, cg.Component)
 
 CONFIG_SCHEMA = output.FLOAT_OUTPUT_SCHEMA.extend(
     {
+        cv.Required(CONF_ID): cv.declare_id(curtains_controller),
         cv.Required("tulle_stepper"): cv.use_id(stepper.Stepper),
         cv.Required("curtains_stepper"): cv.use_id(stepper.Stepper),
-        cv.Required("pcf8574_display"): cv.use_id(lcd_pcf8574.PCF8574LCDDisplay),
+        cv.Required("pcf8574_display"): cv.use_id(lcd_pcf8574.display.PCF8574LCDDisplay),
         cv.Required("open_tulle_sensor"): cv.use_id(binary_sensor.BinarySensor),
         cv.Required("close_tulle_sensor"): cv.use_id(binary_sensor.BinarySensor),
         cv.Required("open_curtains_sensor"): cv.use_id(binary_sensor.BinarySensor),
