@@ -306,6 +306,8 @@ class CurtainsController : public output::FloatOutput, public Component {
   static const uint32_t hash = 696104820;
   ESPPreferenceObject globalStateStorage = global_preferences->make_preference(sizeof(GlobalState), hash, true);
   String lastPrintedMessage = "";
+  bool displayTurnedOn = false;
+  uint32_t displayTurnedAt = 0;
 
   void onTulleOpenButtonStateChanged() { buttonState = button_state::TulleOpen; }
   void onTulleCloseButtonStateChanged() { buttonState = button_state::TulleClose; }

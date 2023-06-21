@@ -32,12 +32,16 @@ StepNode *openCloseStep(step_id::StepId stepId, stepper::Stepper *stepper, uint3
       ->setCustomNextStep(
           [currentState, expectedState, nextStepId, alreadyInMotionStepId, alreadyAtStateStepId](
               GlobalState &globalState, button_state::ButtonState button_state, uint32_t millisSinceStart) {
+            ESP_LOGI(TAG, "State = %d", currentState);
             if (currentState == expectedState) {
+              ESP_LOGI(TAG, "Proceeding to open/close state");
               return nextStepId;
             }
             if (currentState == curtains_state::Opening || currentState == curtains_state::Closing) {
+              ESP_LOGI(TAG, "On the move at the moment");
               return alreadyInMotionStepId;
             }
+            ESP_LOGI(TAG, "Already at the desired state");
             return alreadyAtStateStepId;
           },
           [nextStepId, alreadyInMotionStepId, alreadyAtStateStepId]() {
@@ -280,10 +284,13 @@ void CurtainsController::setup() {
 
 void CurtainsController::loop() {
   unsigned long nowMillis = millis();
+  if (displayTurnedOn && (nowMillis - displayTurnedAt) > 30000) {
+    display->no_backlight();
+  }
   unsigned long millisSinceStart = nowMillis - lastStepStarted;
   StepNode *currentStepNode = step(currentStep);
   if (currentStepNode == NULL) {
-    ESP_LOGI(TAG, "currentStepNode == null, stepId = %d", currentStep);
+    ESP_LOGE(TAG, "currentStepNode == null, stepId = %d", currentStep);
   }
   auto nextStep = currentStepNode->nextStep(globalState, buttonState, millisSinceStart);
   buttonState = button_state::None;
@@ -296,7 +303,7 @@ void CurtainsController::loop() {
   currentStep = nextStep;
   currentStepNode = step(currentStep);
   if (currentStepNode == NULL) {
-    ESP_LOGI(TAG, "nextStepNode == null, stepId = %d", currentStep);
+    ESP_LOGE(TAG, "nextStepNode == null, stepId = %d", currentStep);
   }
   lastStepStarted = nowMillis;
   currentStepNode->enter(globalState, buttonState, 0);
@@ -409,8 +416,10 @@ void CurtainsController::registerSteps(std::vector<StepNode *> stepsToRegister) 
   }
 }
 
-void CurtainsController::backupGlobalState() { globalStateStorage.save(&globalState); }
-void CurtainsController::restoreGlobalState() { globalStateStorage.load(&globalState); }
+void CurtainsController::backupGlobalState() {  /*globalStateStorage.save(&globalState);*/
+}
+void CurtainsController::restoreGlobalState() { /*globalStateStorage.load(&globalState);*/
+}
 
 bool isDisplayReady(lcd_pcf8574::PCF8574LCDDisplay *display) {
   return (display->get_component_state() & COMPONENT_STATE_MASK) == COMPONENT_STATE_LOOP ||
@@ -422,6 +431,9 @@ void CurtainsController::printText(String text) {
     lastPrintedMessage = text;
     if (!display->is_failed()) {
       ESP_LOGI(TAG, "actually printing the text: %s", text.c_str());
+      display->backlight();
+      displayTurnedAt = millis();
+      displayTurnedOn = true;
       display->clear();
       display->print(text.c_str());
       display->display();
