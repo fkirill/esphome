@@ -3,7 +3,7 @@
 namespace esphome {
 namespace curtains_controller {
 
-String curtainsStateToDisplayText(curtains_state::CurtainState state) {
+std::string curtainsStateToDisplayText(curtains_state::CurtainState state) {
   switch (state) {
     case curtains_state::Opening:
       return "is opening";
@@ -23,41 +23,61 @@ StepNode *modePressedStep() {
       ->setTimeout(3000, step_id::Ready);
 }
 
-StepNode *openCloseStep(step_id::StepId stepId, stepper::Stepper *stepper, uint32_t targetPosition,
-                        curtains_state::CurtainState currentState, curtains_state::CurtainState expectedState,
-                        std::function<void(GlobalState &, curtains_state::CurtainState)> setStateFn,
-                        curtains_state::CurtainState setState, step_id::StepId nextStepId,
-                        step_id::StepId alreadyAtStateStepId, step_id::StepId alreadyInMotionStepId) {
-  return (new StepNode(stepId))
-      ->setCustomNextStep(
-          [currentState, expectedState, nextStepId, alreadyInMotionStepId, alreadyAtStateStepId](
-              GlobalState &globalState, button_state::ButtonState button_state, uint32_t millisSinceStart) {
-            ESP_LOGI(TAG, "State = %d", currentState);
+std::vector<StepNode *> openCloseSteps(step_id::StepId stepId, stepper::Stepper *stepper,
+                                       std::function<uint32_t(GlobalState &)> targetPositionFn,
+                                       std::function<curtains_state::CurtainState(GlobalState &)> getStateFn,
+                                       std::function<void(GlobalState &, curtains_state::CurtainState)> setStateFn,
+                                       curtains_state::CurtainState expectedState,
+                                       curtains_state::CurtainState setState, step_id::StepId nextStepId,
+                                       step_id::StepId nextNextStepId, step_id::StepId alreadyAtStateStepId,
+                                       step_id::StepId alreadyInMotionStepId) {
+  StepNode *considerOpeningClosingStep =
+      (new StepNode(stepId))
+          ->setCustomNextStep(
+              [getStateFn, expectedState, nextStepId, alreadyInMotionStepId, alreadyAtStateStepId](
+                  GlobalState &globalState, button_state::ButtonState button_state, uint32_t millisSinceStart) {
+                auto currentState = getStateFn(globalState);
+                ESP_LOGI(TAG, "State = %d", currentState);
+                if (currentState == expectedState) {
+                  ESP_LOGI(TAG, "Proceeding to open/close state");
+                  return nextStepId;
+                }
+                if (currentState == curtains_state::Opening || currentState == curtains_state::Closing) {
+                  ESP_LOGI(TAG, "On the move at the moment");
+                  return alreadyInMotionStepId;
+                }
+                ESP_LOGI(TAG, "Already at the desired state");
+                return alreadyAtStateStepId;
+              },
+              [nextStepId, alreadyInMotionStepId, alreadyAtStateStepId]() {
+                auto res = std::unordered_set<step_id::StepId>();
+                res.insert(nextStepId);
+                res.insert(alreadyInMotionStepId);
+                res.insert(alreadyAtStateStepId);
+                return res;
+              });
+  StepNode *startOpeningClosingStep =
+      (new StepNode(nextStepId))
+          ->onEnter([getStateFn, expectedState, stepper, targetPositionFn, setStateFn, setState](
+                        GlobalState &globalState, button_state::ButtonState button_state, uint32_t millisSinceStart) {
+            auto currentState = getStateFn(globalState);
             if (currentState == expectedState) {
-              ESP_LOGI(TAG, "Proceeding to open/close state");
-              return nextStepId;
+              stepper->set_target(targetPositionFn(globalState));
+              setStateFn(globalState, setState);
             }
-            if (currentState == curtains_state::Opening || currentState == curtains_state::Closing) {
-              ESP_LOGI(TAG, "On the move at the moment");
-              return alreadyInMotionStepId;
-            }
-            ESP_LOGI(TAG, "Already at the desired state");
-            return alreadyAtStateStepId;
-          },
-          [nextStepId, alreadyInMotionStepId, alreadyAtStateStepId]() {
-            auto res = std::unordered_set<step_id::StepId>();
-            res.insert(nextStepId);
-            res.insert(alreadyInMotionStepId);
-            res.insert(alreadyAtStateStepId);
-            return res;
           })
-      ->onEnter([currentState, expectedState, stepper, targetPosition, setStateFn, setState](
-                    GlobalState &globalState, button_state::ButtonState button_state, uint32_t millisSinceStart) {
-        if (currentState == expectedState) {
-          stepper->set_target(targetPosition);
-          setStateFn(globalState, setState);
-        }
-      });
+          ->setCustomNextStep([nextNextStepId](GlobalState &gloablState, button_state::ButtonState buttonState,
+                                               uint32_t millisSInceStart) { return nextNextStepId; },
+                              [nextNextStepId]() {
+                                auto res = std::unordered_set<step_id::StepId>();
+                                res.insert(nextNextStepId);
+                                return res;
+                              });
+
+  auto res = std::vector<StepNode *>();
+  res.push_back(considerOpeningClosingStep);
+  res.push_back(startOpeningClosingStep);
+  return res;
 }
 
 StepNode *customRoutingOnlyStep(step_id::StepId stepId, customNextStepFn nextStepFn,
@@ -65,7 +85,7 @@ StepNode *customRoutingOnlyStep(step_id::StepId stepId, customNextStepFn nextSte
   return (new StepNode(stepId))->setCustomNextStep(nextStepFn, getNextStepsFn);
 }
 
-StepNode *timeoutTextStep(step_id::StepId stepId, String displayText, uint32_t delayMillis,
+StepNode *timeoutTextStep(step_id::StepId stepId, std::string displayText, uint32_t delayMillis,
                           step_id::StepId returnToStep) {
   return (new StepNode(stepId, displayText))->setTimeout(delayMillis, returnToStep);
 }
@@ -89,24 +109,24 @@ StepNode *openingClosingStep(stepper::Stepper *tulleStepper, stepper::Stepper *c
       ->setCustomNextStep(
           [tulleStepper, curtainsStepper](GlobalState &globalState, button_state::ButtonState buttonState,
                                           uint32_t millisSinceStart) {
-            if ((globalState.tulleState == curtains_state::Opening ||
-                 globalState.tulleState == curtains_state::Closing) &&
+            curtains_state::CurtainState tulleState = globalState.get_tulle_state();
+            curtains_state::CurtainState curtainsState = globalState.get_curtains_state();
+            if ((tulleState == curtains_state::Opening || tulleState == curtains_state::Closing) &&
                 tulleStepper->has_reached_target()) {
-              if (globalState.tulleState == curtains_state::Opening) {
-                globalState.tulleState = curtains_state::Open;
+              if (tulleState == curtains_state::Opening) {
+                globalState.set_tulle_state(curtains_state::Open);
               }
-              if (globalState.tulleState == curtains_state::Closing) {
-                globalState.tulleState = curtains_state::Closed;
+              if (tulleState == curtains_state::Closing) {
+                globalState.set_tulle_state(curtains_state::Closed);
               }
             }
-            if ((globalState.curtainsState == curtains_state::Opening ||
-                 globalState.curtainsState == curtains_state::Closing) &&
-                curtainsStepper->has_reached_target()) {
-              if (globalState.curtainsState == curtains_state::Opening) {
-                globalState.curtainsState = curtains_state::Open;
+            if ((curtainsState == curtains_state::Opening) ||
+                (curtainsState == curtains_state::Closing) && curtainsStepper->has_reached_target()) {
+              if (curtainsState == curtains_state::Opening) {
+                globalState.set_curtains_state(curtains_state::Open);
               }
-              if (globalState.curtainsState == curtains_state::Closing) {
-                globalState.curtainsState = curtains_state::Closed;
+              if (curtainsState == curtains_state::Closing) {
+                globalState.set_curtains_state(curtains_state::Closed);
               }
             }
             bool allMotorsStopped = tulleStepper->has_reached_target() && curtainsStepper->has_reached_target();
@@ -123,8 +143,8 @@ StepNode *openingClosingStep(stepper::Stepper *tulleStepper, stepper::Stepper *c
           })
       ->setCustomDisplayText(
           [](GlobalState &globalState, button_state::ButtonState buttonState, uint32_t millisSinceStart) {
-            return "Tulle " + curtainsStateToDisplayText(globalState.tulleState) + ", curtains " +
-                   curtainsStateToDisplayText(globalState.curtainsState);
+            return "Tulle " + curtainsStateToDisplayText(globalState.get_tulle_state()) + ", curtains " +
+                   curtainsStateToDisplayText(globalState.get_curtains_state());
           });
 }
 
@@ -179,13 +199,14 @@ bool CurtainsController::verifyStepsConfiguration() {
   return res;
 }
 
-std::vector<StepNode *> adjustSteps(step_id::StepId mainStepId, String mainDisplayText, step_id::StepId tulleOpenStepId,
-                                    step_id::StepId tulleCloseStepId, step_id::StepId curtainsOpenStepId,
-                                    step_id::StepId curtainsCloseStepId, step_id::StepId nextStepId,
-                                    step_id::StepId startAdjustOpenStepId, step_id::StepId startAdjustCloseStepId,
-                                    step_id::StepId adjustOpenStepId, step_id::StepId adjustCloseStepId,
-                                    String adjustOpenDisplayText, String adjustCloseDisplayText,
-                                    stepper::Stepper *stepper, std::function<uint32_t(GlobalState &)> positionGetter,
+std::vector<StepNode *> adjustSteps(step_id::StepId mainStepId, std::string mainDisplayText,
+                                    step_id::StepId tulleOpenStepId, step_id::StepId tulleCloseStepId,
+                                    step_id::StepId curtainsOpenStepId, step_id::StepId curtainsCloseStepId,
+                                    step_id::StepId nextStepId, step_id::StepId startAdjustOpenStepId,
+                                    step_id::StepId startAdjustCloseStepId, step_id::StepId adjustOpenStepId,
+                                    step_id::StepId adjustCloseStepId, std::string adjustOpenDisplayText,
+                                    std::string adjustCloseDisplayText, stepper::Stepper *stepper,
+                                    std::function<uint32_t(GlobalState &)> positionGetter,
                                     std::function<void(GlobalState &, uint32_t)> positionSetter,
                                     uint32_t stepsIncrement) {
   auto mainStep = (new StepNode(mainStepId, mainDisplayText))
@@ -269,13 +290,13 @@ void CurtainsController::setup() {
   modeButton->add_on_press_callback([this]() { this->onModeButtonStateChanged(); });
   restoreGlobalState();
   display->set_update_interval(SCHEDULER_DONT_RUN);
-  globalState.setupCompleted = true;
-  globalState.tulleOpenPosition = 0;
-  globalState.tulleClosePosition = 3000;
-  globalState.curtainsOpenPosition = 0;
-  globalState.curtainsClosePosition = 3000;
-  globalState.tulleState = curtains_state::Open;
-  globalState.curtainsState = curtains_state::Open;
+  globalState.set_setup_completed(true);
+  globalState.set_tulle_open_position(0);
+  globalState.set_tulle_close_position(3000);
+  globalState.set_curtains_open_position(0);
+  globalState.set_curtains_close_position(3000);
+  globalState.set_tulle_state(curtains_state::Open);
+  globalState.set_curtains_state(curtains_state::Open);
   if (!verifyStepsConfiguration()) {
     ESP_LOGE(TAG, "Step verification failed, see previous log messages, marking the ocmponent as failed");
     mark_failed();
@@ -295,7 +316,7 @@ void CurtainsController::loop() {
   auto nextStep = currentStepNode->nextStep(globalState, buttonState, millisSinceStart);
   buttonState = button_state::None;
   if (nextStep == step_id::None) {
-    String text = currentStepNode->getDisplayText(globalState, buttonState, millisSinceStart);
+    std::string text = currentStepNode->getDisplayText(globalState, buttonState, millisSinceStart);
     printText(text);
     return;
   }
@@ -313,7 +334,7 @@ StepNode *initialStep() {
   return customRoutingOnlyStep(
       step_id::Initial,
       [](GlobalState &globalState, button_state::ButtonState button_state, uint32_t millisSinseStart) {
-        return globalState.setupCompleted ? step_id::Ready : step_id::CalibrateTulleOpen;
+        return globalState.is_setup_completed() ? step_id::Ready : step_id::CalibrateTulleOpen;
       },
       []() {
         auto res = std::unordered_set<step_id::StepId>();
@@ -326,26 +347,38 @@ StepNode *initialStep() {
 void CurtainsController::initSteps() {
   registerStep(initialStep());
   registerStep(readyStep());
+  std::function<curtains_state::CurtainState(GlobalState &)> getTulleState = [](GlobalState &globalState) {
+    return globalState.get_tulle_state();
+  };
+  std::function<curtains_state::CurtainState(GlobalState &)> getCurtainsState = [](GlobalState &globalState) {
+    return globalState.get_curtains_state();
+  };
   std::function<void(GlobalState &, curtains_state::CurtainState)> setTulleState =
-      [](GlobalState &globalState, curtains_state::CurtainState state) { globalState.tulleState = state; };
+      [](GlobalState &globalState, curtains_state::CurtainState state) { globalState.set_tulle_state(state); };
   std::function<void(GlobalState &, curtains_state::CurtainState)> setCurtainsState =
-      [](GlobalState &globalState, curtains_state::CurtainState state) { globalState.curtainsState = state; };
-  registerStep(openCloseStep(step_id::OpenTulle, tulleStepper, globalState.tulleOpenPosition, globalState.tulleState,
-                             curtains_state::Closed, setTulleState, curtains_state::Opening, step_id::OpeningClosing,
-                             step_id::TulleAlreadyOpen, step_id::AlreadyInMotion));
+      [](GlobalState &globalState, curtains_state::CurtainState state) { globalState.set_curtains_state(state); };
+  registerSteps(openCloseSteps(
+      step_id::OpenTulle, tulleStepper, [](GlobalState &globalState) { return globalState.get_tulle_open_position(); },
+      getTulleState, setTulleState, curtains_state::Closed, curtains_state::Opening, step_id::DoOpenTulle,
+      step_id::OpeningClosing, step_id::TulleAlreadyOpen, step_id::AlreadyInMotion));
   registerStep(timeoutTextStep(step_id::TulleAlreadyOpen, "Tulle already open", 1000, step_id::OpeningClosing));
-  registerStep(openCloseStep(step_id::CloseTulle, tulleStepper, globalState.tulleClosePosition, globalState.tulleState,
-                             curtains_state::Open, setTulleState, curtains_state::Closing, step_id::OpeningClosing,
-                             step_id::TulleAlreadyClosed, step_id::AlreadyInMotion));
+  registerSteps(openCloseSteps(
+      step_id::CloseTulle, tulleStepper,
+      [](GlobalState &globalState) { return globalState.get_tulle_close_position(); }, getTulleState, setTulleState,
+      curtains_state::Open, curtains_state::Closing, step_id::DoCloseTulle, step_id::OpeningClosing,
+      step_id::TulleAlreadyClosed, step_id::AlreadyInMotion));
   registerStep(timeoutTextStep(step_id::TulleAlreadyClosed, "Tulle already closed", 1000, step_id::OpeningClosing));
-  registerStep(openCloseStep(step_id::OpenCurtains, curtainsStepper, globalState.curtainsOpenPosition,
-                             globalState.curtainsState, curtains_state::Closed, setCurtainsState,
-                             curtains_state::Opening, step_id::OpeningClosing, step_id::CurtainsAlreadyOpen,
-                             step_id::AlreadyInMotion));
+  registerSteps(openCloseSteps(
+      step_id::OpenCurtains, curtainsStepper,
+      [](GlobalState &globalState) { return globalState.get_curtains_open_position(); }, getCurtainsState,
+      setCurtainsState, curtains_state::Closed, curtains_state::Opening, step_id::DoOpenCurtains,
+      step_id::OpeningClosing, step_id::CurtainsAlreadyOpen, step_id::AlreadyInMotion));
   registerStep(timeoutTextStep(step_id::CurtainsAlreadyOpen, "Curtains already open", 1000, step_id::OpeningClosing));
-  registerStep(openCloseStep(step_id::CloseCurtains, curtainsStepper, globalState.curtainsClosePosition,
-                             globalState.curtainsState, curtains_state::Open, setCurtainsState, curtains_state::Closing,
-                             step_id::OpeningClosing, step_id::CurtainsAlreadyClosed, step_id::AlreadyInMotion));
+  registerSteps(openCloseSteps(
+      step_id::CloseCurtains, curtainsStepper,
+      [](GlobalState &globalState) { return globalState.get_curtains_close_position(); }, getCurtainsState,
+      setCurtainsState, curtains_state::Open, curtains_state::Closing, step_id::DoCloseCurtains,
+      step_id::OpeningClosing, step_id::CurtainsAlreadyClosed, step_id::AlreadyInMotion));
   registerStep(
       timeoutTextStep(step_id::CurtainsAlreadyClosed, "Curtains already closed", 1000, step_id::OpeningClosing));
   registerStep(openingClosingStep(tulleStepper, curtainsStepper));
@@ -360,8 +393,8 @@ void CurtainsController::initSteps() {
       step_id::CalibrateTulleOpenStartAdjustClose, step_id::CalibrateTulleOpenAdjustOpen,
       step_id::CalibrateTulleOpenAdjustClose, "Adjusting tulle open position, opening by 400 steps",
       "Adjusting tulle open position, closing by 400 steps", tulleStepper,
-      [](GlobalState &globalState) { return globalState.tulleOpenPosition; },
-      [](GlobalState &globalState, uint32_t position) { globalState.tulleOpenPosition = position; }, 400));
+      [](GlobalState &globalState) { return globalState.get_tulle_open_position(); },
+      [](GlobalState &globalState, uint32_t position) { globalState.set_tulle_close_position(position); }, 400));
   registerSteps(adjustSteps(
       step_id::CalibrateTulleClose, "Use tulle open and close button to adjust tulle closing position",
       step_id::CalibrateTulleCloseStartAdjustOpen, step_id::CalibrateTulleCloseStartAdjustClose, step_id::None,
@@ -369,8 +402,8 @@ void CurtainsController::initSteps() {
       step_id::CalibrateTulleCloseStartAdjustClose, step_id::CalibrateTulleCloseAdjustOpen,
       step_id::CalibrateTulleCloseAdjustClose, "Adjusting tulle close position, opening by 400 steps",
       "Adjusting tulle close position, closing by 400 steps", tulleStepper,
-      [](GlobalState &globalState) { return globalState.tulleClosePosition; },
-      [](GlobalState &globalState, uint32_t position) { globalState.tulleClosePosition = position; }, 400));
+      [](GlobalState &globalState) { return globalState.get_tulle_close_position(); },
+      [](GlobalState &globalState, uint32_t position) { globalState.set_tulle_close_position(position); }, 400));
   registerSteps(adjustSteps(
       step_id::CalibrateCurtainsOpen, "Use curtains open and close button to adjust curtains opening position",
       step_id::None, step_id::None, step_id::CalibrateCurtainsOpenStartAdjustOpen,
@@ -379,8 +412,8 @@ void CurtainsController::initSteps() {
       step_id::CalibrateCurtainsOpenAdjustOpen, step_id::CalibrateCurtainsOpenAdjustClose,
       "Adjusting curtains open position, opening by 400 steps",
       "Adjusting curtains open position, closing by 400 steps", curtainsStepper,
-      [](GlobalState &globalState) { return globalState.curtainsOpenPosition; },
-      [](GlobalState &globalState, uint32_t position) { globalState.curtainsOpenPosition = position; }, 400));
+      [](GlobalState &globalState) { return globalState.get_curtains_open_position(); },
+      [](GlobalState &globalState, uint32_t position) { globalState.set_curtains_open_position(position); }, 400));
   registerSteps(adjustSteps(
       step_id::CalibrateCurtainsClose, "Use curtains open and close button to adjust curtains closing position",
       step_id::None, step_id::None, step_id::CalibrateCurtainsCloseStartAdjustOpen,
@@ -389,20 +422,20 @@ void CurtainsController::initSteps() {
       step_id::CalibrateCurtainsCloseAdjustOpen, step_id::CalibrateCurtainsCloseAdjustClose,
       "Adjusting curtains close position, opening by 400 steps",
       "Adjusting curtains close position, closing by 400 steps", curtainsStepper,
-      [](GlobalState &globalState) { return globalState.curtainsClosePosition; },
-      [](GlobalState &globalState, uint32_t position) { globalState.curtainsClosePosition = position; }, 400));
+      [](GlobalState &globalState) { return globalState.get_curtains_close_position(); },
+      [](GlobalState &globalState, uint32_t position) { globalState.set_curtains_close_position(position); }, 400));
 
   registerStep(
       timeoutTextStep(step_id::SetupComplete, "Setup complete", 1000, step_id::Ready)
           ->onEnter([this](GlobalState &globalState, button_state::ButtonState buttonState, uint32_t millisSinceStart) {
-            globalState.setupCompleted = true;
+            globalState.set_setup_completed(true);
             this->backupGlobalState();
           }));
 }
 
 void CurtainsController::registerStep(StepNode *step) {
-  ESP_LOGI(TAG, "registering step address %d", step);
-  ESP_LOGI(TAG, "registering step id %d", step->getStepId());
+  ESP_LOGI(TAG, "registering step address %u", step);
+  ESP_LOGI(TAG, "registering step id %u", step->getStepId());
 
   if (steps.size() < step->getStepId() + 1) {
     steps.resize(step->getStepId() + 1);
@@ -422,12 +455,13 @@ void CurtainsController::restoreGlobalState() { /*globalStateStorage.load(&globa
 }
 
 bool isDisplayReady(lcd_pcf8574::PCF8574LCDDisplay *display) {
-  return (display->get_component_state() & COMPONENT_STATE_MASK) == COMPONENT_STATE_LOOP ||
-         (display->get_component_state() & COMPONENT_STATE_MASK) == COMPONENT_STATE_SETUP;
+  uint32_t state = display->get_component_state() & COMPONENT_STATE_MASK;
+  return (state == COMPONENT_STATE_LOOP) || (state == COMPONENT_STATE_SETUP);
 }
 
-void CurtainsController::printText(String text) {
-  if (text != lastPrintedMessage && isDisplayReady(display)) {
+void CurtainsController::printText(std::string text) {
+  bool isNewString = strcmp(text.c_str(), lastPrintedMessage.c_str()) != 0;
+  if (isNewString && isDisplayReady(display)) {
     lastPrintedMessage = text;
     if (!display->is_failed()) {
       ESP_LOGI(TAG, "actually printing the text: %s", text.c_str());

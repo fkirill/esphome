@@ -1,7 +1,11 @@
 #pragma once
 
 #include <unordered_set>
-#include <WString.h>
+#include <string>
+
+#ifdef __CONTROLLER_TEST
+#include "test.h"
+#else
 #include "esphome/core/component.h"
 #include "esphome/components/stepper/stepper.h"
 #include "esphome/components/button/button.h"
@@ -9,6 +13,7 @@
 #include "esphome/components/output/float_output.h"
 #include "esphome/core/preferences.h"
 #include "esphome/core/hal.h"
+#endif
 #include "esphome/core/log.h"
 
 static const char *const TAG = "curtains_controller";
@@ -19,7 +24,24 @@ namespace curtains_state {
 enum CurtainState { Opening, Open, Closing, Closed };
 };
 
-struct GlobalState {
+class GlobalState {
+ public:
+  uint32_t get_tulle_open_position() { return tulleOpenPosition; }
+  uint32_t get_tulle_close_position() { return tulleClosePosition; }
+  uint32_t get_curtains_open_position() { return curtainsOpenPosition; }
+  uint32_t get_curtains_close_position() { return curtainsClosePosition; }
+  curtains_state::CurtainState get_tulle_state() { return tulleState; }
+  curtains_state::CurtainState get_curtains_state() { return curtainsState; }
+  bool is_setup_completed() { return setupCompleted; }
+  void set_tulle_open_position(uint32_t position) { tulleOpenPosition = position; }
+  void set_tulle_close_position(uint32_t position) { tulleClosePosition = position; }
+  void set_curtains_open_position(uint32_t position) { curtainsOpenPosition = position; }
+  void set_curtains_close_position(uint32_t position) { curtainsClosePosition = position; }
+  void set_tulle_state(curtains_state::CurtainState state) { tulleState = state; }
+  void set_curtains_state(curtains_state::CurtainState state) { curtainsState = state; }
+  void set_setup_completed(bool setup_completed) { setupCompleted = setup_completed; }
+
+ private:
   uint32_t tulleOpenPosition;
   uint32_t tulleClosePosition;
   uint32_t curtainsOpenPosition;
@@ -42,6 +64,10 @@ enum StepId {
   CloseTulle,
   OpenCurtains,
   CloseCurtains,
+  DoOpenTulle,
+  DoCloseTulle,
+  DoOpenCurtains,
+  DoCloseCurtains,
   TulleAlreadyOpen,
   TulleAlreadyClosed,
   CurtainsAlreadyOpen,
@@ -78,7 +104,7 @@ enum StepId {
 
 typedef std::function<step_id::StepId(GlobalState &, button_state::ButtonState, uint32_t)> customNextStepFn;
 typedef std::function<std::unordered_set<step_id::StepId>()> customGetNextStepsFn;
-typedef std::function<String(GlobalState &, button_state::ButtonState, uint32_t)> customDislayTextFn;
+typedef std::function<std::string(GlobalState &, button_state::ButtonState, uint32_t)> customDislayTextFn;
 typedef std::function<void(GlobalState &, button_state::ButtonState, uint32_t)> enterExitFn;
 
 class TimeoutAndNextStep {
@@ -92,13 +118,17 @@ class TimeoutAndNextStep {
 
 class StepNode {
  public:
-  StepNode(step_id::StepId stepId) : StepNode(stepId, "<Undefined for " + String(stepId) + ">") {}
+  StepNode(step_id::StepId stepId)
+      : StepNode(stepId, std::string("<Undefined for ") + std::to_string(stepId) + std::string(">")) {}
 
-  StepNode(step_id::StepId stepId, String displayText) : stepId(stepId), displayText(displayText) {}
+  StepNode(step_id::StepId stepId, std::string displayText) {
+    this->stepId = stepId;
+    this->displayText = displayText;
+  }
 
   step_id::StepId getStepId() { return stepId; }
 
-  String getDisplayText() { return displayText; }
+  std::string getDisplayText() { return displayText; }
 
   StepNode *onTulleOpen(step_id::StepId stepId) {
     tulleOpenStep = stepId;
@@ -161,6 +191,8 @@ class StepNode {
         return setStep;
       case button_state::Mode:
         return modeStep;
+      case button_state::None:
+        break;
     }
     if (customNextStep != NULL) {
       return customNextStep(globalState, buttonState, millis_since_start);
@@ -171,7 +203,8 @@ class StepNode {
     return step_id::None;
   }
 
-  String getDisplayText(GlobalState &globalState, button_state::ButtonState buttonState, uint32_t millis_since_start) {
+  std::string getDisplayText(GlobalState &globalState, button_state::ButtonState buttonState,
+                             uint32_t millis_since_start) {
     if (customDisplayText != NULL) {
       return customDisplayText(globalState, buttonState, millis_since_start);
     }
@@ -254,8 +287,8 @@ class StepNode {
   }
 
  private:
-  const step_id::StepId stepId;
-  const String displayText;
+  step_id::StepId stepId;
+  std::string displayText;
   enterExitFn enterFn = NULL;
   enterExitFn exitFn = NULL;
   step_id::StepId tulleOpenStep = step_id::None;
@@ -305,7 +338,7 @@ class CurtainsController : public output::FloatOutput, public Component {
   unsigned long lastStepStarted = millis();
   static const uint32_t hash = 696104820;
   ESPPreferenceObject globalStateStorage = global_preferences->make_preference(sizeof(GlobalState), hash, true);
-  String lastPrintedMessage = "";
+  std::string lastPrintedMessage = "";
   bool displayTurnedOn = false;
   uint32_t displayTurnedAt = 0;
 
@@ -321,7 +354,7 @@ class CurtainsController : public output::FloatOutput, public Component {
   void backupGlobalState();
   void initSteps();
   StepNode *step(step_id::StepId stepId) { return steps[stepId]; }
-  void printText(String text);
+  void printText(std::string text);
   bool verifyStepsConfiguration();
 };
 };  // namespace curtains_controller
