@@ -1,0 +1,109 @@
+esphome:
+  name: curtains-controller
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  password: "curtains-controller"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "curtains-controller Fallback"
+    password: !secret fallback_ap_password
+
+captive_portal:
+
+web_server:
+  port: 80
+
+external_components:
+  - source:
+      type: local
+      path: /Users/kirillfrolov/L298N/components
+    components: [l298n]
+  - source:
+      type: local
+      path: /Users/kirillfrolov/esphome2/esphome/components
+    components: [curtains_controller]
+
+i2c:
+  sda: 25
+  scl: 33
+
+stepper:
+  - platform: l298n
+    id: tulle_stepper
+    output_pin1: 13
+    output_pin2: 12
+    output_pin3: 14
+    output_pin4: 27
+    max_speed: 1500
+    acceleration: 5000
+    deceleration: 5000
+
+  - platform: l298n
+    id: curtains_stepper
+    output_pin1: 21
+    output_pin2: 19
+    output_pin3: 18
+    output_pin4: 5
+    max_speed: 1500
+    acceleration: 5000
+    deceleration: 5000
+
+display:
+  - platform: lcd_pcf8574
+    id: pcf8574_display
+    dimensions: 20x4
+    address: 0x27
+    # we have to specify Lambda to avoid sigfault
+    lambda: |-
+      /* nothing */
+
+output:
+  - platform: curtains_controller
+    id: controller
+    tulle_stepper: tulle_stepper
+    curtains_stepper: curtains_stepper
+    pcf8574_display: pcf8574_display
+    open_tulle_button: open_tulle_button
+    close_tulle_button: close_tulle_button
+    open_curtains_button: open_curtains_button
+    close_curtains_button: close_curtains_button
+    set_button: set_button
+    mode_button: mode_button
+
+button:
+  - platform: template
+    id: open_tulle_button
+    name: "Open Tulle"
+  - platform: template
+    id: close_tulle_button
+    name: "Close Tulle"
+  - platform: template
+    id: open_curtains_button
+    name: "Open Curtains"
+  - platform: template
+    id: close_curtains_button
+    name: "Close Curtains"
+  - platform: template
+    id: set_button
+    name: "Set"
+  - platform: template
+    id: mode_button
+    name: "Mode"

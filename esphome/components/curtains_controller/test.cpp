@@ -63,7 +63,9 @@ class FailedTestException : public std::exception {
   std::string reason;
 };
 
-void assert_equals(uint32_t expected, uint32_t actual) {
+#define assert_equals(expected, actual) _assert_equals(__FILE__, __LINE__, expected, actual);
+
+void _assert_equals(std::string file, uint32_t lineNo, uint32_t expected, uint32_t actual) {
   if (expected != actual) {
     char buf[1000];
     std::snprintf(&buf[0], 999, "Expected: %d, actual: %d", expected, actual);
@@ -71,7 +73,7 @@ void assert_equals(uint32_t expected, uint32_t actual) {
   }
 }
 
-void assert_equals(std::string expected, std::string actual) {
+void _assert_equals(std::string file, uint32_t lineNo, std::string expected, std::string actual) {
   bool stringsEqual = strcmp(expected.c_str(), actual.c_str()) == 0;
   if (!stringsEqual) {
     char buf[1000];
@@ -93,7 +95,7 @@ void test(std::string testName, test_method test) {
   }
 }
 
-void assert_equals(uint32_t expected, uint32_t actual, std::string reason) {
+void _assert_equals(std::string file, uint32_t lineNo, uint32_t expected, uint32_t actual, std::string reason) {
   if (expected != actual) {
     char buf[1000];
     std::snprintf(&buf[0], 999, "Expected: %d, actual: %d", expected, actual);
@@ -115,7 +117,7 @@ void cleanup() {
 }
 
 void loop() {
-  for (int i = 0; i < 10; i++) {
+  for (int i = 0; i < 5; i++) {
     curtains_controller->loop();
   }
 }
@@ -138,15 +140,27 @@ void test_open_tulle_already_open() {
   assert_equals("Tulle already open", display->text);
 }
 
+using CurtainState = esphome::curtains_controller::curtains_state::CurtainState;
+
 void test_close_tulle() {
   display->resetMock();
   close_tulle_button->press();
   loop();
 
   assert_equals(1, display->clear_calls);
-  assert_equals(1, display->print_calls);
+  z assert_equals(1, display->print_calls);
   assert_equals(1, display->display_calls);
-  assert_equals("Tulle already open", display->text);
+  assert_equals("Tulle is closing, curtains is open", display->text);
+  assert_equals(CurtainState::Closing, globalState.get_tulle_state());
+  assert_equals(0, tulle_stepper->position);
+  assert_equals(3000, tulle_stepper->target);
+
+  tulle_stepper->done_moving();
+  loop();
+  assert_equals("Ready", display->text);
+  assert_equals(3000, tulle_stepper->position);
+  assert_equals(3000, tulle_stepper->target);
+  assert_equals(CurtainState::Closed, globalState.tulleState);
 }
 
 int main() {

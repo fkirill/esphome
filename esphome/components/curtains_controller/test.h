@@ -62,9 +62,16 @@ class FloatOutput {};
 namespace stepper {
 class Stepper : public Component {
  public:
-  void set_target(int32_t target) {}
-  bool has_reached_target() { return true; }
-  void report_position(int32_t position) {}
+  void set_target(int32_t target) { this->target = target; }
+  uint32_t get_target() { return target; }
+  uint32_t get_position() { return position; }
+  bool has_reached_target() { return position == target; }
+  void report_position(int32_t position) { this->position = position; }
+
+  void done_moving() { position = target; }
+
+  uint32_t target = 0;
+  uint32_t position = 0;
 };
 };  // namespace stepper
 namespace button {

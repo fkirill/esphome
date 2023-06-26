@@ -130,3 +130,6 @@ sdkconfig.*
 !sdkconfig.defaults
 
 .tests/
+test
+secrets.yaml
+*.plist
