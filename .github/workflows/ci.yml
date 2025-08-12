@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out code from GitHub
-        uses: actions/checkout@v3.5.2
+        uses: actions/checkout@v5
       - name: Set up Python ${{ env.DEFAULT_PYTHON }}
         uses: actions/setup-python@v4.6.0
         with:
@@ -54,7 +54,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out code from GitHub
-        uses: actions/checkout@v3.5.2
+        uses: actions/checkout@v5
       - name: Run yamllint
         uses: frenck/action-yamllint@v1.4.1
 
@@ -65,7 +65,7 @@ jobs:
       - common
     steps:
       - name: Check out code from GitHub
-        uses: actions/checkout@v3.5.2
+        uses: actions/checkout@v5
       - name: Restore Python virtual environment
         uses: actions/cache/restore@v3.3.1
         with:
@@ -87,7 +87,7 @@ jobs:
       - common
     steps:
       - name: Check out code from GitHub
-        uses: actions/checkout@v3.5.2
+        uses: actions/checkout@v5
       - name: Restore Python virtual environment
         uses: actions/cache/restore@v3.3.1
         with:
@@ -109,7 +109,7 @@ jobs:
       - common
     steps:
       - name: Check out code from GitHub
-        uses: actions/checkout@v3.5.2
+        uses: actions/checkout@v5
       - name: Restore Python virtual environment
         uses: actions/cache/restore@v3.3.1
         with:
@@ -131,7 +131,7 @@ jobs:
       - common
     steps:
       - name: Check out code from GitHub
-        uses: actions/checkout@v3.5.2
+        uses: actions/checkout@v5
       - name: Restore Python virtual environment
         uses: actions/cache/restore@v3.3.1
         with:
@@ -153,7 +153,7 @@ jobs:
       - common
     steps:
       - name: Check out code from GitHub
-        uses: actions/checkout@v3.5.2
+        uses: actions/checkout@v5
       - name: Restore Python virtual environment
         uses: actions/cache/restore@v3.3.1
         with:
@@ -175,7 +175,7 @@ jobs:
       - common
     steps:
       - name: Check out code from GitHub
-        uses: actions/checkout@v3.5.2
+        uses: actions/checkout@v5
       - name: Restore Python virtual environment
         uses: actions/cache/restore@v3.3.1
         with:
@@ -196,7 +196,7 @@ jobs:
       - common
     steps:
       - name: Check out code from GitHub
-        uses: actions/checkout@v3.5.2
+        uses: actions/checkout@v5
       - name: Restore Python virtual environment
         uses: actions/cache/restore@v3.3.1
         with:
@@ -236,7 +236,7 @@ jobs:
         file: [1, 2, 3, 3.1, 4, 5, 6, 7, 8]
     steps:
       - name: Check out code from GitHub
-        uses: actions/checkout@v3.5.2
+        uses: actions/checkout@v5
       - name: Restore Python virtual environment
         uses: actions/cache/restore@v3.3.1
         with:
@@ -299,7 +299,7 @@ jobs:
 
     steps:
       - name: Check out code from GitHub
-        uses: actions/checkout@v3.5.2
+        uses: actions/checkout@v5
       - name: Restore Python virtual environment
         uses: actions/cache/restore@v3.3.1
         with:
